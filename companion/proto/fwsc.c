@@ -135,9 +135,23 @@ int fwsc_parse(const uint8_t *raw, size_t len, fwsc_info_t *out)
     out->flash_size = flash_size;
     out->app = img + flash_off + FW_APP_LO;
     out->app_size = FW_APP_HI - FW_APP_LO;
+    out->owned = img; /* transféré à l'appelant (fwsc_free), évite un use-after-free */
     ret = 0;
 
 done:
-    free(img);
+    if (ret != 0) {
+        free(img);
+    }
     return ret;
+}
+
+void fwsc_free(fwsc_info_t *info)
+{
+    if (info == NULL) {
+        return;
+    }
+    if (info->owned) {
+        free(info->owned);
+        info->owned = NULL;
+    }
 }

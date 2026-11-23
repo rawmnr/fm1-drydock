@@ -62,18 +62,18 @@ typedef struct {
     int charging;
     int vbus_present;
     uint32_t bat_raw;  /* ADC 13 bits brut */
-    uint32_t bat_mv;   /* estimation raw * 1,4 mV/LSB (à confirmer au test matinal) */
-    int present;       /* 1 si AXP2101 répond en I2C */
+    int ok;            /* 1 si toutes les lectures télémétrie ont réussi */
 } pmu_telemetry_t;
 
 static i2c_master_dev_handle_t pmu_dev;
 
-static uint8_t i2c_read8(i2c_master_dev_handle_t dev, uint8_t reg)
+static uint8_t i2c_read8(i2c_master_dev_handle_t dev, uint8_t reg, int *ok)
 {
     uint8_t out = 0;
     if (i2c_master_transmit_receive(dev, &reg, 1, &out, 1, 50) == ESP_OK) {
         return out;
     }
+    *ok = 0; /* lecture ratée : ne pas présenter un 0 comme une valeur réelle */
     return 0;
 }
 
@@ -89,23 +89,32 @@ static esp_err_t open_pmu(i2c_master_bus_handle_t bus)
 
 static pmu_telemetry_t read_pmu(void)
 {
-    pmu_telemetry_t t = { .percent = -1, .charging = 0, .vbus_present = 0, .bat_raw = 0, .bat_mv = 0, .present = 1 };
+    pmu_telemetry_t t = { .percent = -1, .charging = 0, .vbus_present = 0, .bat_raw = 0, .ok = 1 };
 
     /* active l'ADC tension batterie (bit0 de 0x30) si besoin */
-    uint8_t ctrl = i2c_read8(pmu_dev, AXP2101_ADC_CTRL);
+    uint8_t ctrl = i2c_read8(pmu_dev, AXP2101_ADC_CTRL, &t.ok);
     uint8_t enable[2] = { AXP2101_ADC_CTRL, (uint8_t)(ctrl | 0x01) };
-    i2c_master_transmit(pmu_dev, enable, sizeof(enable), 50);
+    if (i2c_master_transmit(pmu_dev, enable, sizeof(enable), 50) != ESP_OK) {
+        t.ok = 0;
+    }
     vTaskDelay(pdMS_TO_TICKS(30));
 
-    const uint8_t hi = i2c_read8(pmu_dev, AXP2101_ADC_BATV_H);
-    const uint8_t lo = i2c_read8(pmu_dev, AXP2101_ADC_BATV_L);
+    const uint8_t hi = i2c_read8(pmu_dev, AXP2101_ADC_BATV_H, &t.ok);
+    const uint8_t lo = i2c_read8(pmu_dev, AXP2101_ADC_BATV_L, &t.ok);
     t.bat_raw = ((uint32_t)(hi & 0x1F) << 8) | lo; /* ADC 13 bits ; échelle mV à calibrer (datasheet) */
 
-    const uint8_t s1 = i2c_read8(pmu_dev, AXP2101_STATUS1);
-    const uint8_t s2 = i2c_read8(pmu_dev, AXP2101_STATUS2);
+    const uint8_t s1 = i2c_read8(pmu_dev, AXP2101_STATUS1, &t.ok);
+    const uint8_t s2 = i2c_read8(pmu_dev, AXP2101_STATUS2, &t.ok);
     t.vbus_present = (s1 >> 5) & 1;
     t.charging = ((s2 >> 5) == 0x01) ? 1 : 0;
-    t.percent = i2c_read8(pmu_dev, AXP2101_BAT_PERCENT);
+    t.percent = i2c_read8(pmu_dev, AXP2101_BAT_PERCENT, &t.ok);
+
+    if (!t.ok) { /* n'affiche pas de zéros trompeurs */
+        t.percent = -1;
+        t.charging = 0;
+        t.vbus_present = 0;
+        t.bat_raw = 0;
+    }
     return t;
 }
 
@@ -122,11 +131,16 @@ static void probe_board(i2c_master_bus_handle_t bus)
     const esp_err_t pmu_ok = open_pmu(bus);
     if (pmu_ok == ESP_OK) {
         const pmu_telemetry_t p = read_pmu();
-        ESP_LOGI(TAG, "AXP2101: batt=%d%% chg=%d vbus=%d adc_raw=%u",
-                 p.percent, p.charging, p.vbus_present, p.bat_raw);
-        status_add("battery: %d%% %s VBUS:%s", p.percent,
-                   p.charging ? "(charge)" : "",
-                   p.vbus_present ? "on" : "off");
+        if (!p.ok) {
+            ESP_LOGW(TAG, "AXP2101: lecture télémétrie ratée");
+            status_add("battery: n/a (lecture AXP ratée)");
+        } else {
+            ESP_LOGI(TAG, "AXP2101: batt=%d%% chg=%d vbus=%d adc_raw=%u",
+                     p.percent, p.charging, p.vbus_present, p.bat_raw);
+            status_add("battery: %d%% %s VBUS:%s", p.percent,
+                       p.charging ? "(charge)" : "",
+                       p.vbus_present ? "on" : "off");
+        }
     } else {
         ESP_LOGW(TAG, "AXP2101 introuvable sur I2C 0x%02x: %s", AXP2101_ADDR, esp_err_to_name(pmu_ok));
         status_add("battery: n/a (pas d'AXP2101)");

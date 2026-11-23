@@ -21,7 +21,11 @@ typedef struct {
      * raw doit rester valide. Taille = FW_APP_HI - FW_APP_LO. */
     const uint8_t *app;
     uint32_t app_size;
+    void *owned; /* tampon alloué par fwsc_parse (à libérer via fwsc_free) */
 } fwsc_info_t;
 
 /** Parse un .fwsc complet chargé en mémoire. Renvoie 0 si OK (tous les CRC validés). */
 int fwsc_parse(const uint8_t *raw, size_t len, fwsc_info_t *out);
+
+/** Libère le tampon interne alloué par fwsc_parse. */
+void fwsc_free(fwsc_info_t *info);

@@ -50,6 +50,7 @@ int main(int argc, char **argv)
 
     printf("{\"product\":\"%s\",\"loader\":true,\"count\":%d,\"app_off\":%u,\"app_size\":%u}\n",
            info.product, info.file_count, info.flash_off + FW_APP_LO, info.app_size);
+    fwsc_free(&info);
     free(raw);
     return 0;
 }

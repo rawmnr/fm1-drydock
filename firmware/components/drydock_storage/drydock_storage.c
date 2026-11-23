@@ -30,6 +30,10 @@ static int hex_of_stream(FILE *f, char out_hex[65])
             return -1;
         }
     }
+    if (ferror(f)) { /* lecture interrompue : ne pas rendre un hash de préfixe comme valide */
+        mbedtls_sha256_free(&ctx);
+        return -1;
+    }
     if (mbedtls_sha256_finish(&ctx, digest) != 0) {
         mbedtls_sha256_free(&ctx);
         return -1;
@@ -141,8 +145,28 @@ int drydock_manifest_parse(const char *path, drydock_manifest_t *out)
              cJSON_GetStringValue(cJSON_GetObjectItem(rescue, "sha256")));
 
     out->vessel_count = cJSON_GetArraySize(vessels);
-    out->valid = (strlen(out->stock_file) > 0 && sha_str_ok(out->stock_sha256) &&
-                  sha_str_ok(out->rescue_sha256) && out->vessel_count > 0);
+    const cJSON *generated_at = cJSON_GetObjectItem(root, "generated_at");
+    const bool has_stamp = cJSON_IsString(generated_at) && cJSON_GetStringValue(generated_at)[0] != '\0';
+
+    /* chaque vessel doit avoir file + sha256 hex valides */
+    bool vessels_ok = true;
+    cJSON *item = NULL;
+    cJSON_ArrayForEach(item, vessels) {
+        if (!cJSON_IsObject(item)) {
+            vessels_ok = false;
+            break;
+        }
+        const char *vf = cJSON_GetStringValue(cJSON_GetObjectItem(item, "file"));
+        const char *vs = cJSON_GetStringValue(cJSON_GetObjectItem(item, "sha256"));
+        if (vf == NULL || !sha_str_ok(vs)) {
+            vessels_ok = false;
+            break;
+        }
+    }
+
+    out->valid = (has_stamp && strlen(out->stock_file) > 0 && sha_str_ok(out->stock_sha256) &&
+                  strlen(out->rescue_file) > 0 && sha_str_ok(out->rescue_sha256) &&
+                  out->vessel_count > 0 && vessels_ok);
 
     ESP_LOGI(TAG, "manifest: %s, %d vessels, stock=%s", out->valid ? "OK" : "invalid",
              out->vessel_count, out->stock_file);
