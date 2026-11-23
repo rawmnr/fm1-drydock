@@ -181,8 +181,10 @@ static void usb_client_task(void *arg)
     const usb_host_client_config_t cfg = {
         .is_synchronous = false,
         .max_num_event_msg = 5,
-        .event_cb = client_event_cb,
-        .event_cb_arg = NULL,
+        .async = {
+            .client_event_callback = client_event_cb,
+            .callback_arg = NULL,
+        },
     };
     usb_host_client_handle_t client = NULL;
     if (usb_host_client_register(&cfg, &client) != ESP_OK) {
