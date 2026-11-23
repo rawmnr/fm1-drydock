@@ -143,7 +143,10 @@ class Resolver:
         release = self.github.latest_release(v.repo)
         asset = self.github.find_asset(release, v.asset)
         rel = f"vessels/{v.id}.fwsc"
-        data = self.cache.ensure(rel, None, lambda: self.github.download_asset(asset))
+        # toujours re-télécharger : aucun hash autoritatif ne permet de réutiliser un cache
+        # sans risquer de servir l'asset d'une release précédente
+        data = self.github.download_asset(asset)
+        self.cache.write(rel, data)
         return ResolvedEntry(
             id=v.id, name=v.name or asset["name"], rel_path=rel, data=data,
             sha256=sha256_bytes(data), version=release.get("tag_name"), source=Source.github,

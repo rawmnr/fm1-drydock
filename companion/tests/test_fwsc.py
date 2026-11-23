@@ -94,12 +94,19 @@ def extractor(tmp_path_factory) -> Path:
     return bin_path
 
 
-def _cache_fwsc() -> Path:
-    p = Path.home() / ".cache" / "drydock-sync" / "vessels" / "sloop.fwsc"
-    if p.is_file():
-        return p
-    pytest.skip("pas de .fwsc en cache (lancer d'abord: cd companion && uv run drydock fetch)")
-    return p  # unreachable (pytest.skip lève)
+def _fetch_hub(tmp_path: Path, id_: str, name: str) -> Path:
+    """Télécharge un .fwsc réel du hub si absent du cache local (permet de tourner en CI)."""
+    from drydock_sync.providers.firmware_hub import FirmwareHub
+
+    cached = Path.home() / ".cache" / "drydock-sync" / "vessels" / f"{id_}.fwsc"
+    if cached.is_file():
+        return cached
+    with FirmwareHub() as hub:
+        fw = hub.resolve(id_)
+        data = hub.download_pkg(fw)
+    p = tmp_path / f"{name}.fwsc"
+    p.write_bytes(data)
+    return p
 
 
 def _run_extract(extractor: Path, fwsc: Path, app_out: Path) -> dict:
@@ -109,7 +116,7 @@ def _run_extract(extractor: Path, fwsc: Path, app_out: Path) -> dict:
 
 
 def test_c_framer_matches_python_reference(extractor: Path, tmp_path: Path) -> None:
-    fwsc = _cache_fwsc()
+    fwsc = _fetch_hub(tmp_path, "sloop", "sloop")
     app_out = tmp_path / "sloop.app"
     out = _run_extract(extractor, fwsc, app_out)
 
@@ -124,9 +131,16 @@ def test_c_framer_matches_python_reference(extractor: Path, tmp_path: Path) -> N
 
 def test_c_framer_rejects_official_v15(extractor: Path, tmp_path: Path) -> None:
     """Le V15 officiel n'est pas au format Felucca : le parseur C doit échouer proprement."""
-    fwsc = Path.home() / ".cache" / "drydock-sync" / "stock" / "fm1_v15_official.fwsc"
-    if not fwsc.is_file():
-        pytest.skip("V15 officiel absent du cache")
+    from drydock_sync.providers.firmware_hub import FirmwareHub
+
+    cached = Path.home() / ".cache" / "drydock-sync" / "stock" / "fm1_v15_official.fwsc"
+    if cached.is_file():
+        fwsc = cached
+    else:
+        with FirmwareHub() as hub:
+            data = hub.stock_v15()
+        fwsc = tmp_path / "v15.fwsc"
+        fwsc.write_bytes(data)
     app_out = tmp_path / "v15.app"
     res = subprocess.run([str(extractor), str(fwsc), str(app_out)], capture_output=True, text=True)
     assert res.returncode != 0  # pas de marqueur FELUCCA-LOADER-1

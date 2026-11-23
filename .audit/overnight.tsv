@@ -9,3 +9,4 @@ ts	phase	decision	why	evidence	result
 2026-11-23T22:09:56Z	proto	Framer C .fwsc + test hote bit-identical (c72a787) — skip local sans compilateur C hote	vert sur CI Linux (gcc); gap outillage Windows	test compile en CI	skip local
 2026-11-23T22:09:56Z	firmware	drydock_storage + boot_mode ecrits, build bg_12 en cours	montage SD, parseur cJSON, sha256 streaming mbedtls; flag RTC_NOINIT	run build	en cours
 2026-11-23T22:16:33Z	m5	trail clos, MORNING_REPORT commite (43f1538), arbre propre 	revue cross-model lancee avant handoff	git log 8 commits	passe
+2026-11-23T22:21:14Z	meta	review.independent (LivelyJellyfish) a note 7 failles, dont UAF fwsc, test skip CI, ferror, manifest, cache github, AXP n/a -> corrigees	si failles vraies dans une course longue: les corriger immediatement	diff cette run	en cours
