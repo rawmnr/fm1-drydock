@@ -16,9 +16,14 @@ Le port USB-C de la carte est l'USB natif du S3 (GPIO19 D-, GPIO20 D+). Pas de p
 | Révision | Contrôleur affichage | Tactile |
 |---|---|---|
 | V1 | SH8601 (QSPI) | FT3168 (I2C) |
-| V2 | CO5300 | CST820 |
+| V2 | CO5300 | CST816/CST820 |
 
-La page wiki Waveshare décrit la V1 (SH8601 + FT3168). La bibliothèque Arduino officielle inclut aussi un driver CST816, cohérent avec les révisions récentes. [À vérifier] détection logicielle de la révision (readback du contrôleur d'affichage).
+Le vendeur a annoncé l'arrêt de la V1 et le basculement vers la V2 le 2026-05-30. Le BSP Waveshare officiel pilote la V2 (CO5300 + CST816). Mesuré dans l'exemple officiel `13_display_colorbar` (IDF) :
+
+- **Détection de révision** : probe I2C de l'adresse du tactile CST816 (`0x15`) sur `SDA=15` / `SCL=14`. Adresse répond → V2 ; sinon V1/original. L'écran est piloté en CO5300 dans les deux cas, avec un décalage X de `0x10` si V2.
+- **Afficheur V2 (CO5300, QSPI)** : PCLK=11, D0=4, D1=5, D2=6, D3=7, CS=12, RGB565, QSPI.
+- **Composant BSP** : `waveshare/esp32_s3_touch_amoled_1_8` (registre, v2.0.3), pour `idf: ">=5.5,<6.1"`. Fournit display + tactile + luminosité + microSD (`bsp_display_start`, `bsp_display_brightness_set`, `bsp_sdcard_mount`).
+- **Révision mesurée sur la carte (smoke 1, 2026-11-23) : V2** — `CO5300 + CST816/CST820`. Probe I2C : `CST816=0x15` répond, `FT3168=0x38` absent, log série « board revision: V2 (CO5300 + CST816/CST820) ».
 
 ## Périphériques embarqués
 
@@ -37,7 +42,7 @@ La page wiki Waveshare décrit la V1 (SH8601 + FT3168). La bibliothèque Arduino
 
 ## Stockage microSD
 
-SDMMC 1 bit, CS piloté par le TCA9554 (EXIO7), format FAT32. [À vérifier] broches SDMMC exactes, vitesse et compatibilité CS contre le BSP esp-waveshare.
+SDMMC 1 bit, CS piloté par le TCA9554 (EXIO7), format FAT32. Le BSP monte la carte à `BSP_SD_MOUNT_POINT` (`/sdcard`) via `bsp_sdcard_mount()` ; la layout Drydock est `/sdcard/drydock/` (voir `SPEC.md`). [À vérifier] broches SDMMC exactes (CMD/CLK/D0) contre le macro `BSP_SD_*` du BSP (smoke 2).
 
 ## USB-C : Device vs Host
 
