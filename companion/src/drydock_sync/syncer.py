@@ -5,7 +5,7 @@ import hashlib
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .models import FileEntry, Manifest, RescueHelper, Source, VesselConfig, VesselsConfig
@@ -138,6 +138,8 @@ class Resolver:
         )
 
     def _resolve_github(self, v: VesselConfig) -> ResolvedEntry:
+        if v.repo is None or v.asset is None:
+            raise ValueError(f"vessel '{v.id}': github requires repo/asset")
         release = self.github.latest_release(v.repo)
         asset = self.github.find_asset(release, v.asset)
         rel = f"vessels/{v.id}.fwsc"
@@ -148,6 +150,8 @@ class Resolver:
         )
 
     def _resolve_local(self, v: VesselConfig) -> ResolvedEntry:
+        if v.path is None:
+            raise ValueError(f"vessel '{v.id}': source local requires path")
         src = (self.config_dir / v.path).resolve()
         data = local_provider.load(src)
         rel = f"vessels/{v.id}.fwsc"
@@ -217,7 +221,7 @@ def sync(target: Path, entries: list[ResolvedEntry]) -> SyncResult:
         errors.append("entrées stock_v15 ou rescue_helper manquantes")
     if not errors:
         manifest = Manifest(
-            generated_at=datetime.now(timezone.utc),
+            generated_at=datetime.now(UTC),
             stock_v15=stock.file_entry,
             rescue_helper=RescueHelper(file=rescue.rel_path, sha256=rescue.sha256),
             vessels=[e.file_entry for e in entries if e.rel_path.startswith("vessels/")],

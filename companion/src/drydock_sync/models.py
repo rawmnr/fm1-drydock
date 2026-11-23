@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import tomllib
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
 
-class Source(str, Enum):
+class Source(StrEnum):
     """Origine d'un firmware dans vessels.toml."""
 
     firmware_hub = "firmware_hub"

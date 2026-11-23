@@ -23,7 +23,24 @@ packages = ["src/drydock_sync"]
 dev = [
   "pytest>=8",
   "jsonschema>=4.22",
+  "ruff>=0.8",
+  "mypy>=1.13",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 125
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/drydock_sync"]

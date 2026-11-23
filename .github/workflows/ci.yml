@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  companion:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: companion
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: uv sync
+      - name: Lint (ruff)
+        run: uv run ruff check .
+      - name: Types (mypy)
+        run: uv run mypy
+      - name: Tests (incl. validation contre schema/manifest.schema.json)
+        run: uv run pytest -q
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build firmware (ESP-IDF esp32s3)
+        uses: espressif/idf-action@v1
+        with:
+          esp_idf_version: v5.5.3
+          target: esp32s3
+          path: firmware
+          command: idf.py build

@@ -57,7 +57,7 @@ class HubCatalog(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    license: dict | None = None
+    license: dict[str, object] | None = None
     updated: str | None = None
     firmwares: list[HubFirmware]
 

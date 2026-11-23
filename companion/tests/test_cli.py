@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from test_syncer import _entries
 from typer.testing import CliRunner
 
 from drydock_sync.cli import app
-from drydock_sync.syncer import sha256_bytes, sync
-
-from test_syncer import _entries
+from drydock_sync.syncer import sync
 
 runner = CliRunner()
 
@@ -38,3 +37,31 @@ def test_sync_writes_manifest_via_cli(tmp_path: Path) -> None:
     # aucune config ni réseau : doit échouer proprement
     assert result.exit_code == 1
     assert "vessels.toml" in result.output or "erreur" in result.output
+
+
+def test_doctor_reports_all_checks(tmp_path: Path, monkeypatch, sample_catalog: dict) -> None:
+    from drydock_sync import cli as cli_mod
+    from drydock_sync import device as device_mod
+    from drydock_sync.providers.firmware_hub import FirmwareHub
+
+    cfg = tmp_path / "vessels.toml"
+    cfg.write_text("[[vessel]]\nid = \"sloop\"\nsource = \"firmware_hub\"\n", encoding="utf-8")
+
+    # fake hub réactif
+    from drydock_sync.providers.firmware_hub import HubCatalog
+
+    class FakeHub(FirmwareHub):
+        def catalog(self):
+            return HubCatalog.model_validate(sample_catalog)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(cli_mod, "FirmwareHub", FakeHub)
+    monkeypatch.setattr(device_mod, "usb_devices", lambda: [("303A", "1001"), ("4D4A", "4155")])
+    monkeypatch.setattr(device_mod, "find_drydock_volume", lambda: None)
+
+    result = runner.invoke(app, ["doctor", "--config", str(cfg), "--cache", str(tmp_path / "cache")])
+    assert result.exit_code == 1  # volume absent -> échec
+    for name in ("config", "cache", "hub", "usb:esp32", "usb:fm1", "volume"):
+        assert name in result.output

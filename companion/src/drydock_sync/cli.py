@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import NoReturn
 
 import typer
 
@@ -11,7 +11,9 @@ from . import device
 from .models import Source, load_vessels
 from .providers.firmware_hub import FirmwareHub
 from .providers.github import GithubProvider
-from .syncer import Cache, Resolver, resolve_all, sync as run_sync, verify as run_verify
+from .syncer import Cache, ResolvedEntry, Resolver, resolve_all
+from .syncer import sync as run_sync
+from .syncer import verify as run_verify
 
 app = typer.Typer(
     help="drydock-sync: fetch FM-1 firmwares and sync the DRYDOCK USB-C volume.",
@@ -19,7 +21,7 @@ app = typer.Typer(
 )
 
 
-def _cache_root(explicit: Optional[Path]) -> Path:
+def _cache_root(explicit: Path | None) -> Path:
     env = os.environ.get("DRYDOCK_CACHE")
     if explicit is not None:
         return explicit
@@ -28,11 +30,11 @@ def _cache_root(explicit: Optional[Path]) -> Path:
     return Path.home() / ".cache" / "drydock-sync"
 
 
-def _print_entry(e) -> None:
+def _print_entry(e: ResolvedEntry) -> None:
     print(f"  {e.id:20} {e.name[:28]:28} {e.version or '-':8} {len(e.data):>8} B  sha256 {e.sha256[:16]}")
 
 
-def _fail(message: str) -> None:
+def _fail(message: str) -> NoReturn:
     typer.secho(f"erreur: {message}", fg=typer.colors.RED, err=True)
     raise typer.Exit(1)
 
@@ -76,6 +78,8 @@ def list_vessels(
                 except Exception as exc:
                     _fail(str(exc))
             elif v.source is Source.github:
+                if v.repo is None or v.asset is None:
+                    _fail(f"vessel '{v.id}': github requires repo/asset")
                 github = GithubProvider()
                 try:
                     release = github.latest_release(v.repo)
@@ -86,6 +90,8 @@ def list_vessels(
                 github.close()
                 print(f"  {v.id:20} github   {release.get('tag_name', '?'):8} {asset['name']}  ({asset.get('size', '?')} B)")
             else:
+                if v.path is None:
+                    _fail(f"vessel '{v.id}': source local requires path")
                 p = (config.parent / v.path).resolve()
                 try:
                     size = p.stat().st_size
@@ -97,7 +103,7 @@ def list_vessels(
 @app.command()
 def fetch(
     config: Path = typer.Option("vessels.toml", "--config", "-c", help="vessels.toml"),
-    cache: Optional[Path] = typer.Option(None, "--cache", help="cache dir (default ~/.cache/drydock-sync)"),
+    cache: Path | None = typer.Option(None, "--cache", help="cache dir (default ~/.cache/drydock-sync)"),
 ) -> None:
     """Download configured vessels, official Stock V15 and the rescue helper into the cache."""
     try:
@@ -117,10 +123,65 @@ def fetch(
 
 
 @app.command()
-def sync(
-    target: Optional[Path] = typer.Option(None, "--target", "-t", help="path to the DRYDOCK volume (default: auto-detect)"),
+def doctor(
     config: Path = typer.Option("vessels.toml", "--config", "-c", help="vessels.toml"),
-    cache: Optional[Path] = typer.Option(None, "--cache", help="cache dir (default ~/.cache/drydock-sync)"),
+    cache: Path | None = typer.Option(None, "--cache", help="cache dir (default ~/.cache/drydock-sync)"),
+) -> None:
+    """Diagnose the setup: config, cache, hub connectivity, USB devices, DRYDOCK volume."""
+    checks: list[tuple[str, bool, str]] = []
+
+    # config
+    try:
+        cfg = load_vessels(config)
+        checks.append(("config", True, f"{len(cfg.vessel)} vessels dans {config}"))
+    except Exception as exc:
+        checks.append(("config", False, str(exc)))
+
+    # cache
+    cache_path = _cache_root(cache)
+    try:
+        cache_path.mkdir(parents=True, exist_ok=True)
+        checks.append(("cache", True, str(cache_path)))
+    except OSError as exc:
+        checks.append(("cache", False, f"{cache_path}: {exc}"))
+
+    # hub connectivity
+    hub_ok = False
+    hub_detail = ""
+    try:
+        with FirmwareHub() as hub:
+            cat = hub.catalog()
+        hub_ok = True
+        hub_detail = f"{len(cat.firmwares)} firmwares, MAJ {cat.updated}"
+    except Exception as exc:
+        hub_detail = str(exc)
+    checks.append(("hub", hub_ok, hub_detail))
+
+    # USB devices
+    present = set(device.usb_devices())
+    esp = ("303A", "1001") in present
+    fm = ("4D4A", "4155") in present
+    checks.append(("usb:esp32", esp, "303A:1001 présent" if esp else "ESP32-S3 introuvable"))
+    checks.append(("usb:fm1", fm, "4D4A:4155 présent" if fm else "FM-1 introuvable"))
+
+    # volume
+    vol = device.find_drydock_volume()
+    checks.append(("volume", vol is not None, str(vol) if vol else "volume DRYDOCK introuvable"))
+
+    failed = 0
+    for name, ok, detail in checks:
+        color = typer.colors.GREEN if ok else typer.colors.RED
+        typer.secho(f"{'OK' if ok else 'FAIL'}  {name:12} {detail}", fg=color)
+        failed += 0 if ok else 1
+    if failed:
+        raise typer.Exit(1)
+
+
+@app.command()
+def sync(
+    target: Path | None = typer.Option(None, "--target", "-t", help="path to the DRYDOCK volume (default: auto-detect)"),
+    config: Path = typer.Option("vessels.toml", "--config", "-c", help="vessels.toml"),
+    cache: Path | None = typer.Option(None, "--cache", help="cache dir (default ~/.cache/drydock-sync)"),
 ) -> None:
     """Copy changed firmwares to <target>/drydock/ and write manifest.json atomically."""
     try:
@@ -151,7 +212,7 @@ def sync(
 
 @app.command()
 def verify(
-    target: Optional[Path] = typer.Option(None, "--target", "-t", help="path to the DRYDOCK volume (default: auto-detect)"),
+    target: Path | None = typer.Option(None, "--target", "-t", help="path to the DRYDOCK volume (default: auto-detect)"),
 ) -> None:
     """Check every file listed in manifest.json (existence and SHA-256)."""
     dest = target if target is not None else device.find_drydock_volume()

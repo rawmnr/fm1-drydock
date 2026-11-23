@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -22,12 +22,12 @@ class GithubProvider:
         if r.status_code == 404:
             raise ValueError(f"{repo}: aucune release 'latest' (404)")
         r.raise_for_status()
-        return r.json()
+        return cast(dict[str, Any], r.json())
 
     def find_asset(self, release: dict[str, Any], pattern: str) -> dict[str, Any]:
         for asset in release.get("assets", []):
             if re.search(pattern, asset["name"]):
-                return asset
+                return cast(dict[str, Any], asset)
         names = ", ".join(a["name"] for a in release.get("assets", []))
         raise ValueError(
             f"asset '{pattern}' introuvable dans {release.get('tag_name', '?')} (assets: {names or 'aucun'})"
