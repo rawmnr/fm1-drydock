@@ -1,0 +1,17 @@
+# ESP-IDF
+firmware/build/
+firmware/sdkconfig
+firmware/dependencies.lock
+firmware/managed_components/
+firmware/.espressif/
+
+# Python
+companion/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# OS
+.DS_Store
+Thumbs.db
