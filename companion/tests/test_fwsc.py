@@ -87,7 +87,10 @@ def extractor(tmp_path_factory) -> Path:
     if cc is None:
         pytest.skip("aucun compilateur C hôte disponible")
     bin_path = tmp_path_factory.mktemp("bin") / ("fwsc_extract.exe" if sys.platform == "win32" else "fwsc_extract")
-    subprocess.run([cc, "-O2", "-I", str(PROTO), str(PROTO / "fwsc.c"), str(PROTO / "main.c"), "-o", str(bin_path)], check=True)
+    subprocess.run(
+        [cc, "-O2", "-I", str(PROTO), str(PROTO / "fwsc.c"), str(PROTO / "main.c"), "-o", str(bin_path)],
+        check=True,
+    )
     return bin_path
 
 
