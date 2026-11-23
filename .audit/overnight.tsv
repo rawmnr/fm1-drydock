@@ -1,0 +1,11 @@
+ts	phase	decision	why	evidence	result
+2026-11-23T21:51:29Z	start	Course overnight v0.1 (5 jalons). Lignes precedentes: aucune; nouvelle run.	run initial	run 1	open
+2026-11-23T21:52:09Z	companion	doctor live sur hardware: 5/6 OK, volume FAIL attendu (pas PC Sync)	preuve materielle lecture seule FM-1	commande log, EXIT=1	passe
+2026-11-23T21:52:09Z	meta	namespace commit a saute des hunks (cli.py sans doctor) -> bascule git add/commit mono-repo	incomplet cassait HEAD	repair 1ccd4d6	verifie def doctor=1
+2026-11-23T21:52:09Z	companion	gates verts au HEAD 1ccd4d6 (ruff/mypy/pytest 43)	contenu = arbre teste	uv run ruff/mypy/pytest	passe
+2026-11-23T21:59:11Z	firmware	REQUIRES main: esp_flash->spi_flash (esp_flash fusionne dans spi_flash en 5.5.6), retrait lvgl (public via BSP)	cause racine: fatal esp_flash.h absent	error de config resolue	open
+2026-11-23T22:09:56Z	companion	M5a/M5b verts: doctor + ruff/mypy/pytest + CI (commit 1ccd4d6)	unit coherente verifiee	uv run ruff/mypy/pytest	passe
+2026-11-23T22:09:56Z	firmware	Socle boot COM6 valide: revision V2, PSRAM, display, AXP (commit 022f2fe)	logs serie reels sur hardware	revision V2 (cst816=1)	passe
+2026-11-23T22:09:56Z	proto	Framer C .fwsc + test hote bit-identical (c72a787) — skip local sans compilateur C hote	vert sur CI Linux (gcc); gap outillage Windows	test compile en CI	skip local
+2026-11-23T22:09:56Z	firmware	drydock_storage + boot_mode ecrits, build bg_12 en cours	montage SD, parseur cJSON, sha256 streaming mbedtls; flag RTC_NOINIT	run build	en cours
+2026-11-23T22:16:33Z	m5	trail clos, MORNING_REPORT commite (43f1538), arbre propre 	revue cross-model lancee avant handoff	git log 8 commits	passe
