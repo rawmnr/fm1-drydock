@@ -10,8 +10,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "boot_mode.h"
 #include "bsp/esp-bsp.h"
 #include "driver/i2c_master.h"
+#include "drydock_storage.h"
 #include "esp_chip_info.h"
 #include "esp_flash.h"
 #include "esp_heap_caps.h"
@@ -132,28 +134,26 @@ static void probe_board(i2c_master_bus_handle_t bus)
     status_add("board: %s", rev);
 }
 
-/* Smoke 2 : microSD en lecture seule, layout drydock. */
+/* Smoke 2 : microSD en lecture seule, layout drydock (via drydock_storage). */
 static void probe_sdcard(void)
 {
-    esp_err_t ret = bsp_sdcard_mount();
+    const esp_err_t ret = drydock_sd_mount();
     if (ret != ESP_OK) {
         ESP_LOGI(TAG, "SD mount: %s (carte absente ou échec)", esp_err_to_name(ret));
         status_add("SD: %s", esp_err_to_name(ret));
         return;
     }
-    ESP_LOGI(TAG, "SD mounted at %s", BSP_SD_MOUNT_POINT);
-    FILE *f = fopen(MANIFEST, "r");
-    if (f != NULL) {
-        fseek(f, 0, SEEK_END);
-        const long size = ftell(f);
-        fclose(f);
-        ESP_LOGI(TAG, "%s present (%ld bytes), layout drydock OK", MANIFEST, size);
-        status_add("SD: mounted, manifest %ld B", size);
+    ESP_LOGI(TAG, "SD mounted (drydock_storage)");
+    drydock_manifest_t m;
+    if (drydock_manifest_parse(DRY_MANIFEST, &m) == 0) {
+        ESP_LOGI(TAG, "manifest OK: %d vessels, stock=%s sha=%s",
+                 m.vessel_count, m.stock_file, m.stock_sha256);
+        status_add("SD: %d vessels, stock OK", m.vessel_count);
     } else {
-        ESP_LOGW(TAG, "%s absent (SD montée mais layout drydock non initialisé)", MANIFEST);
-        status_add("SD: mounted, pas de manifest");
+        ESP_LOGW(TAG, "manifest absent/invalide (%s)", DRY_MANIFEST);
+        status_add("SD: pas de manifest valide");
     }
-    bsp_sdcard_unmount();
+    drydock_sd_unmount();
 }
 
 #ifdef SMOKE_USB_HOST
@@ -274,6 +274,8 @@ static void build_screen(void)
 void app_main(void)
 {
     ESP_LOGI(TAG, "FM1-Drydock firmware scaffold");
+    ESP_LOGI(TAG, "boot mode: %s",
+             boot_mode_current() == BOOT_MODE_PC_SYNC ? "PC_SYNC" : "HOST_FLASH");
 
     esp_chip_info_t chip;
     esp_chip_info(&chip);
