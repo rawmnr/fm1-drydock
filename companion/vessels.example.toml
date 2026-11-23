@@ -1,24 +1,28 @@
 # Firmwares à synchroniser sur la carte Drydock (drydock fetch + drydock sync).
 # Le Stock V15 officiel et le helper Rescue sont synchronisés automatiquement.
-# La forme exacte des clés est fixée par companion/src/drydock_sync/models.py en Phase 1.
+# Sources : firmware_hub (id du catalogue thefirmwarehub.com), github, local.
 
 [[vessel]]
 id = "sloop"
-source = "firmware_hub"    # id du catalogue thefirmwarehub.com
+source = "firmware_hub"
 
 [[vessel]]
 id = "felucca"
 source = "firmware_hub"
 
 [[vessel]]
-id = "mon-fw-github"
-name = "Mon firmware GitHub"
-source = "github"
-repo = "utilisateur/repo"
-asset = "monfirmware.fwsc"   # nom ou pattern de la release asset
+id = "skiff"
+source = "firmware_hub"
 
-[[vessel]]
-id = "ma-sauvegarde"
-name = "Sauvegarde locale"
-source = "local"
-path = "backups/ma-sauvegarde.fwsc"
+# [[vessel]]
+# id = "mon-fw-github"
+# name = "Mon firmware GitHub"
+# source = "github"
+# repo = "utilisateur/repo"
+# asset = "monfirmware\\.fwsc"
+
+# [[vessel]]
+# id = "ma-sauvegarde"
+# name = "Sauvegarde locale"
+# source = "local"
+# path = "backups/ma-sauvegarde.fwsc"
