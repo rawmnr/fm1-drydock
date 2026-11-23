@@ -54,3 +54,16 @@ Point matériel risqué (à trancher au test) : le FM-1 est auto-alimenté, mais
 - **Tension batterie AXP2101** : ADC brut mesuré (`4112`), échelle mV **non calibrée** (datasheet) — % / charge / VBUS sont fiables, la tension est à confirmer avec le datasheet.
 - **Carte révision** : **V2** confirmée (CST816 répond, FT3168 absent). Les écrans/UI devront cibler le CO5300.
 - **Host/Device même port USB-C** : la console série et le mode Host partagent les broches ; le probe Host est donc une build séparée (`SMOKE_USB_HOST`), pas le défaut (qui doit rester branchable au PC).
+
+## Corrections post-review (reviewer indépendant)
+
+Une relecture indépendante du trail a relevé 7 points ; tous corrigés et commités (`b1a1f39`, `891740e`) :
+
+- **`fwsc.c` use-after-free** : `out->app` pointait dans un tampon libéré. Le tampon est maintenant `owned` par `fwsc_info_t` et libéré via `fwsc_free()`.
+- **Test `.fwsc` skipé même en CI** : il n'y avait aucun `.fwsc` en cache sur le runner. Le test télécharge désormais des fixtures réelles depuis le hub quand elles sont absentes → il s'exécute vraiment en CI (Linux/gcc) et localement avec un compilateur C.
+- **SHA-256 streaming** : échec → `ferror()` vérifié avant de finaliser le digest (un préfixe corrompu n'est plus rendu valide).
+- **Validation manifest** : `generated_at`, `rescue_file` et chaque vessel (`file`+`sha256`) sont maintenant validés.
+- **Cache GitHub** : l'asset d'une release est toujours re-téléchargé (plus de risque de servir l'ancienne version sous un nouveau numéro).
+- **Télémétrie AXP2101** : une lecture I2C ratée affiche `n/a` au lieu de zéros trompeurs.
+
+Le firmware durci a été reflashé sur `COM6` et re-vérifié par log série : boot `HOST_FLASH`, révision V2, AXP OK, display OK, SD sans carte gérée, boucle d'`alive` stable.
