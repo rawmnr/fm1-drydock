@@ -47,8 +47,8 @@ static const char *TAG = "drydock";
 #define AXP2101_STATUS2      0x01
 #define AXP2101_BAT_PERCENT  0xA4
 
-#define DRYDOCK_DIR  "/sdcard/drydock"
-#define MANIFEST     DRYDOCK_DIR "/manifest.json"
+#define DRYDOCK_DIR  "/drydock"
+#define MANIFEST     DRY_MANIFEST
 
 static lv_obj_t *s_body; /* label non const, mis à jour sous lock */
 static char s_status[512] = {0};
@@ -148,24 +148,29 @@ static void probe_board(i2c_master_bus_handle_t bus)
     status_add("board: %s", rev);
 }
 
-/* Smoke 2 : microSD en lecture seule, layout drydock (via drydock_storage). */
+/* Smoke 2 : partition FAT interne (via drydock_storage, Wear Levelling). */
 static void probe_sdcard(void)
 {
     const esp_err_t ret = drydock_sd_mount();
     if (ret != ESP_OK) {
-        ESP_LOGI(TAG, "SD mount: %s (carte absente ou échec)", esp_err_to_name(ret));
-        status_add("SD: %s", esp_err_to_name(ret));
+        ESP_LOGI(TAG, "FAT interne: mount %s", esp_err_to_name(ret));
+        status_add("FS: %s", esp_err_to_name(ret));
         return;
     }
-    ESP_LOGI(TAG, "SD mounted (drydock_storage)");
+    uint64_t free_b = 0;
+    if (drydock_fs_free(&free_b) == ESP_OK) {
+        ESP_LOGI(TAG, "FAT interne: monté sur %s, libre %llu Mo",
+                 DRY_MOUNT_POINT, (unsigned long long)(free_b >> 20));
+        status_add("FS: %llu Mo libres", (unsigned long long)(free_b >> 20));
+    }
     drydock_manifest_t m;
-    if (drydock_manifest_parse(DRY_MANIFEST, &m) == 0) {
+    if (drydock_manifest_parse(MANIFEST, &m) == 0) {
         ESP_LOGI(TAG, "manifest OK: %d vessels, stock=%s sha=%s",
                  m.vessel_count, m.stock_file, m.stock_sha256);
-        status_add("SD: %d vessels, stock OK", m.vessel_count);
+        status_add("FS: %d vessels, stock OK", m.vessel_count);
     } else {
-        ESP_LOGW(TAG, "manifest absent/invalide (%s)", DRY_MANIFEST);
-        status_add("SD: pas de manifest valide");
+        ESP_LOGW(TAG, "manifest absent/invalide (%s)", MANIFEST);
+        status_add("FS: pas de manifest valide");
     }
     drydock_sd_unmount();
 }

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Manifest FM1-Drydock",
-  "description": "Contrat partagé PC <-> ESP32 décrivant /sdcard/drydock/. Généré par drydock sync, parsé par drydock_storage. Toute modification est répercutée dans companion/src/drydock_sync/models.py.",
+  "description": "Contrat partagé PC <-> ESP32 décrivant la racine du volume Drydock (/drydock sur l'ESP32, racine en PC Sync). Généré par drydock sync, parsé par drydock_storage. Toute modification est répercutée dans companion/src/drydock_sync/models.py.",
   "type": "object",
   "additionalProperties": false,
   "required": [

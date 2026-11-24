@@ -9,7 +9,7 @@
 - **Écran** : AMOLED 1.8" 368×448 QSPI.
   - **Révision V1** : contrôleur `SH8601` + tactile `FT3168`.
   - **Révision V2** : contrôleur `CO5300` + tactile `CST820`.
-- **Stockage** : slot microSD (SDMMC 1-bit, CS géré via expander I2C `TCA9554` EXIO7).
+- **Stockage** : partition **Flash interne `drydock_fs`** 12 Mo (`data/fat`, Wear Levelling). Slot microSD en option future (SDMMC 1-bit, CS via expander I2C `TCA9554` EXIO7).
 - **PMU** : `AXP2101`.
 - **USB-C** : port unique relié à l'USB-OTG natif de l'ESP32-S3 (`GPIO19` D-, `GPIO20` D+).
 
@@ -22,19 +22,21 @@
 Les piles USB Device (TinyUSB) et USB Host (`usb_host_lib`) ne cohabitant pas dynamiquement sur ESP32-S3, le changement de rôle s'effectue par **redémarrage rapide (~300 ms)** via un flag en RAM RTC (`RTC_NOINIT_ATTR`) :
 
 1. **Mode `HOST_FLASH` (défaut au boot)** :
-   - Monte la microSD en local (`/sdcard/drydock/`).
+   - Monte la partition FAT interne **`drydock_fs`** (12 Mo, Wear Levelling) sur `/drydock`.
    - Parse `manifest.json` et affiche le catalogue sur l'AMOLED.
    - Active `usb_host_lib` pour détecter le FM-1 (USB-MIDI en mode normal, USB-MSC `UBOOT1.00` en mode Rescue).
 2. **Mode `DEVICE_PC_SYNC` (activé depuis l'UI tactile)** :
    - Écrit le flag RTC et redémarre.
-   - N'accède pas au système de fichiers en local ; expose la microSD en **USB Mass Storage (TinyUSB MSC)** avec le label `DRYDOCK`.
+   - **N'accède pas au système de fichiers en local** ; expose la partition `spiflash` en **USB Mass Storage (TinyUSB MSC)** avec le label `DRYDOCK` (exclusion mutuelle stricte avec le VFS local).
    - Le PC synchronise les firmwares via `drydock-sync`.
    - Un tap sur **Done** (ou débranchement) remet le flag sur `HOST_FLASH` et redémarre.
 
-## 4. Contrat de stockage microSD (`/sdcard/drydock/`)
+## 4. Contrat de stockage Flash interne (`/drydock`)
+
+Stockage par défaut : partition `drydock_fs` (`data/fat`, 12 Mo) dans la Flash 16 Mo de l'ESP32-S3, montée par `esp_vfs_fat_spiflash_mount_rw_wl()` (`format_if_mount_failed = true` au premier boot). La microSD reste une option future (même layout).
 
 ```text
-/sdcard/drydock/
+/drydock/
 ├── manifest.json
 ├── stock/
 │   └── fm1_v15_official.fwsc
@@ -95,6 +97,7 @@ Les piles USB Device (TinyUSB) et USB Host (`usb_host_lib`) ne cohabitant pas dy
 ## 6. Spécification du firmware ESP32-S3 (`firmware/`)
 
 - **Stack** : ESP-IDF ≥ 5.5, LVGL 9, BSP Waveshare.
+- **Stockage** : `drydock_storage` monte `/drydock` (FAT `drydock_fs` 12 Mo) via wear levelling ; `drydock_usb_msc_device` l'expose au PC en `DEVICE_PC_SYNC`. En ce mode le VFS local n'est pas monté.
 - **Écrans UI (368×448 tactile)** :
   1. **Accueil / Liste des Vessels** : liste scrollable (nom, version, catégorie), indicateur de connexion FM-1, accès rapide **PC Sync** et **Rescue / Stock**.
   2. **Détail d'un Vessel** : description, auteur, version, taille, bouton **Flash** (avec option recommandée *Flash Stock V15 first*).

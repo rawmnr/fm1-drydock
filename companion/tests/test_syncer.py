@@ -43,7 +43,7 @@ def _validate_against_schema(manifest_path: Path) -> None:
 def test_sync_creates_layout_and_valid_manifest(tmp_path: Path) -> None:
     result = sync(tmp_path, _entries())
     assert result.ok
-    base = tmp_path / "drydock"
+    base = tmp_path  # racine du volume == racine de la layout Drydock
     assert (base / "stock/fm1_v15_official.fwsc").read_bytes() == V15_DATA
     assert (base / "rescue/jl_flash_helper.bin").read_bytes() == HELPER_DATA
     assert (base / "vessels/sloop.fwsc").read_bytes() == SLOOP_DATA
@@ -64,7 +64,7 @@ def test_sync_is_idempotent(tmp_path: Path) -> None:
 
 def test_no_tmp_file_left(tmp_path: Path) -> None:
     sync(tmp_path, _entries())
-    leftover = list((tmp_path / "drydock").rglob("*.tmp"))
+    leftover = list(tmp_path.rglob("*.tmp"))
     assert leftover == []
 
 
@@ -77,7 +77,7 @@ def test_verify_ok_after_sync(tmp_path: Path) -> None:
 
 def test_verify_detects_tamper(tmp_path: Path) -> None:
     sync(tmp_path, _entries())
-    (tmp_path / "drydock/vessels/sloop.fwsc").write_bytes(b"evil")
+    (tmp_path / "vessels/sloop.fwsc").write_bytes(b"evil")
     result = verify(tmp_path)
     assert not result.ok
     assert ("vessels/sloop.fwsc", "SHA MISMATCH") in result.results
@@ -93,7 +93,7 @@ def test_sync_requires_stock_and_rescue(tmp_path: Path) -> None:
     only_vessel = [e for e in _entries() if e.rel_path.startswith("vessels/")]
     result = sync(tmp_path, only_vessel)
     assert not result.ok
-    assert not (tmp_path / "drydock/manifest.json").exists()
+    assert not (tmp_path / "manifest.json").exists()
 
 
 def test_cache_ensure_writes_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -183,7 +183,7 @@ def sync(
     config: Path = typer.Option("vessels.toml", "--config", "-c", help="vessels.toml"),
     cache: Path | None = typer.Option(None, "--cache", help="cache dir (default ~/.cache/drydock-sync)"),
 ) -> None:
-    """Copy changed firmwares to <target>/drydock/ and write manifest.json atomically."""
+    """Copy changed firmwares to the <target> volume root and write manifest.json atomically."""
     try:
         cfg = load_vessels(config)
     except Exception as exc:

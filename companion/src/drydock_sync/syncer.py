@@ -198,12 +198,15 @@ class SyncResult:
 
 
 def sync(target: Path, entries: list[ResolvedEntry]) -> SyncResult:
-    """Copie les entrées vers <target>/drydock/ (diff SHA-256) et écrit manifest.json.
+    """Écrit la layout Drydock à la racine du volume <target> (diff SHA-256) et manifest.json.
+
+    La partition FAT interne est montée par l'ESP32 à `/drydock` ; sa racine
+    EST la racine de la layout (plus de sous-dossier `drydock/` sur le volume).
 
     Le manifest n'est écrit, par replacement atomique, que si toutes les copies
     ont réussi. Le fichier destination s'appelle .tmp pendant l'écriture.
     """
-    base = target / "drydock"
+    base = target
     copied: list[str] = []
     unchanged: list[str] = []
     errors: list[str] = []
@@ -241,7 +244,7 @@ class VerifyResult:
 
 def verify(target: Path) -> VerifyResult:
     """Vérifie chaque fichier listé dans manifest.json (existence + SHA-256)."""
-    base = target / "drydock"
+    base = target
     man_file = base / "manifest.json"
     if not man_file.is_file():
         return VerifyResult(ok=False, results=[("manifest.json", "MISSING")])

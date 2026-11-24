@@ -52,7 +52,7 @@ class RescueHelper(BaseModel):
 
 
 class Manifest(BaseModel):
-    """/sdcard/drydock/manifest.json, le contrat partagé PC <-> ESP32."""
+    """/drydock/manifest.json (partition FAT interne), le contrat partagé PC <-> ESP32."""
 
     model_config = ConfigDict(extra="forbid")
 

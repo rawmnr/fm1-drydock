@@ -40,9 +40,13 @@ Le vendeur a annoncé l'arrêt de la V1 et le basculement vers la V2 le 2026-05-
 | Batterie | MX1.25 2P 3.7 V | AXP2101 |
 | Boutons | PWR, BOOT | GPIO |
 
-## Stockage microSD
+## Stockage par défaut : Flash interne (`drydock_fs`)
 
-SDMMC 1 bit, CS piloté par le TCA9554 (EXIO7), format FAT32. Le BSP monte la carte à `BSP_SD_MOUNT_POINT` (`/sdcard`) via `bsp_sdcard_mount()` ; la layout Drydock est `/sdcard/drydock/` (voir `SPEC.md`). [À vérifier] broches SDMMC exactes (CMD/CLK/D0) contre le macro `BSP_SD_*` du BSP (smoke 2).
+Depuis la bascule stockage, Drydock ne dépend plus de la microSD. La partition `drydock_fs` (`data/fat`, **12 Mo**) de la Flash 16 Mo est montée sur `/drydock` via `esp_vfs_fat_spiflash_mount_rw_wl()` (Wear Levelling, `format_if_mount_failed = true` au premier boot, LFN activé). Layout : `/drydock/` (voir `SPEC.md`). La layout est identique quand la carte est exposée au PC en mode `DEVICE_PC_SYNC` (TinyUSB MSC spiflash, volume `DRYDOCK`).
+
+### microSD (option future)
+
+SDMMC 1 bit, CS piloté par le TCA9554 (EXIO7), format FAT32. Le BSP monte la carte à `BSP_SD_MOUNT_POINT` (`/sdcard`) via `bsp_sdcard_mount()`. [À vérifier] broches SDMMC exactes (CMD/CLK/D0) contre le macro `BSP_SD_*` du BSP.
 
 ## USB-C : Device vs Host
 
