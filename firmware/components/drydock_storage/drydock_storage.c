@@ -14,12 +14,12 @@
 
 static const char *TAG = "dry_storage";
 
-static wl_handle_t s_wl = WL_INVALID_HANDLE; /* handle partagé avec le futur MSC device */
+static wl_handle_t s_wl = WL_INVALID_HANDLE; /* handle shared with the future MSC device */
 
-#define DRY_VOLUME_LABEL "DRYDOCK" /* nom de volume attendu par drydock-sync (VolumeName) */
+#define DRY_VOLUME_LABEL "DRYDOCK" /* volume name expected by drydock-sync (VolumeName) */
 
-/* Le label FAT vit dans le boot sector : f_mkfs le laisse vide, Windows le
- * lirait comme "FAT32"/vide et drydock-sync ne trouverait pas le volume. */
+/* The FAT label lives in the boot sector: f_mkfs leaves it empty, Windows
+ * would read it as "FAT32"/empty and drydock-sync wouldn't find the volume. */
 static void set_volume_label(void)
 {
     const unsigned char pdrv = ff_diskio_get_pdrv_wl(s_wl);
@@ -27,7 +27,7 @@ static void set_volume_label(void)
     snprintf(drv_label, sizeof(drv_label), "%u:%s", (unsigned)pdrv, DRY_VOLUME_LABEL);
     const FRESULT fr = f_setlabel((const TCHAR *)drv_label);
     if (fr != FR_OK) {
-        ESP_LOGW(TAG, "f_setlabel(%s) a échoué: %d", drv_label, (int)fr);
+        ESP_LOGW(TAG, "f_setlabel(%s) failed: %d", drv_label, (int)fr);
     }
 }
 
@@ -50,7 +50,7 @@ static int hex_of_stream(FILE *f, char out_hex[65])
             return -1;
         }
     }
-    if (ferror(f)) { /* lecture interrompue : ne pas rendre un hash de préfixe comme valide */
+    if (ferror(f)) { /* read interrupted: do not return a prefix hash as valid */
         mbedtls_sha256_free(&ctx);
         return -1;
     }
@@ -80,7 +80,7 @@ int drydock_sha256_file(const char *path, char out_hex[65])
 esp_err_t drydock_sd_mount(void)
 {
     const esp_vfs_fat_mount_config_t cfg = {
-        .format_if_mount_failed = true, /* premier boot : partition brute -> FAT */
+        .format_if_mount_failed = true, /* first boot: raw partition -> FAT */
         .max_files = 12,
         .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
     };
@@ -110,7 +110,7 @@ esp_err_t drydock_fs_wl_init(wl_handle_t *out_wl)
     const esp_partition_t *part =
         esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "drydock_fs");
     if (part == NULL) {
-        ESP_LOGE(TAG, "partition drydock_fs (data/fat) introuvable");
+        ESP_LOGE(TAG, "drydock_fs (data/fat) partition not found");
         return ESP_ERR_NOT_FOUND;
     }
     const esp_err_t ret = wl_mount(part, out_wl);
@@ -215,7 +215,7 @@ int drydock_manifest_parse(const char *path, drydock_manifest_t *out)
     const cJSON *generated_at = cJSON_GetObjectItem(root, "generated_at");
     const bool has_stamp = cJSON_IsString(generated_at) && cJSON_GetStringValue(generated_at)[0] != '\0';
 
-    /* chaque vessel doit avoir file + sha256 hex valides */
+    /* each vessel must have a valid file + hex sha256 */
     bool vessels_ok = true;
     cJSON *item = NULL;
     cJSON_ArrayForEach(item, vessels) {
@@ -281,7 +281,7 @@ int drydock_manifest_vessels(const char *path, drydock_vessel_t **out_list)
         copy_str(v->sha256, sizeof(v->sha256), cJSON_GetStringValue(cJSON_GetObjectItem(item, "sha256")));
         const cJSON *sz = cJSON_GetObjectItem(item, "size_bytes");
         v->size_bytes = cJSON_IsNumber(sz) ? (uint32_t)sz->valuedouble : 0;
-        if (v->id[0] == '\0') { /* entrée invalide : ne pas la compter */
+        if (v->id[0] == '\0') { /* invalid entry: do not count it */
             continue;
         }
         i++;

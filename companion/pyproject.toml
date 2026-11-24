@@ -1,7 +1,7 @@
 [project]
 name = "drydock-sync"
 version = "0.1.0"
-description = "CLI compagnon PC pour FM1-Drydock : télécharger les firmwares FM-1 et synchroniser le volume USB DRYDOCK."
+description = "PC companion CLI for FM1-Drydock: fetch FM-1 firmwares and sync the DRYDOCK usb volume."
 requires-python = ">=3.12"
 dependencies = [
   "httpx>=0.27",
@@ -25,7 +25,7 @@ dev = [
   "jsonschema>=4.22",
   "ruff>=0.8",
   "mypy>=1.13",
-  "ziglang>=0.14",  # cc hôte pour les tests bit-à-bit du protocole C sur Windows
+  "ziglang>=0.14",  # host cc for bit-identical C protocol tests on Windows
 ]
 
 [tool.pytest.ini_options]

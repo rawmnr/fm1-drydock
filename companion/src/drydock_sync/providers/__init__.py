@@ -1,1 +1,1 @@
-"""Fournisseurs de téléchargement : firmware_hub, github, local."""
+"""Download providers: firmware_hub, github, local."""

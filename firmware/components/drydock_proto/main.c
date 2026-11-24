@@ -1,6 +1,6 @@
-/* main.c — exécutable de test hôte : extrait la zone d'app d'un .fwsc.
+/* main.c — host test executable: extracts the app region from a .fwsc.
  * Usage: fwsc_extract <file.fwsc> <out.app>
- * Sortie JSON sur stdout : {product, loader, count, app_off, app_size}
+ * JSON output on stdout: {product, loader, count, app_off, app_size}
  */
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,9 +1,9 @@
-/* Moteur USB Host MIDI : détection du FM-1 (VID_4D4A&PID_4155), transport
- * MIDI SysEx (USB MIDI event packets) et protocole de mise à jour M-UPGRADE.
+/* USB Host MIDI engine: FM-1 detection (VID_4D4A&PID_4155), SysEx MIDI
+ * transport (USB MIDI event packets) and M-UPGRADE update protocol.
  *
- * Le transport USB-MIDI découpe chaque SysEx en paquets de 4 octets
- * [CIN<<4 | cable, d0, d1, d2] : CIN 0x4 start, 0x5 continue, 0x7 end.
- * Le FM-1 envoie ses requêtes 0x30 en SysEx (cadrage F0..F7, voir upgrade.c).
+ * The USB-MIDI transport splits each SysEx into 4-byte packets
+ * [CIN<<4 | cable, d0, d1, d2]: CIN 0x4 start, 0x5 continue, 0x7 end.
+ * The FM-1 sends its 0x30 requests as SysEx (framed F0..F7, see upgrade.c).
  */
 #include "drydock_usb_midi_host.h"
 
@@ -28,7 +28,7 @@
 #define CIN_SYSEX_CONT 0x5
 #define CIN_SYSEX_END 0x7
 
-#define XFER_BUF_SIZE 512 /* >= MPS MIDI (64) et 2× paquets */
+#define XFER_BUF_SIZE 512 /* >= MIDI MPS (64) and 2× packets */
 #define HS_TIMEOUT_MS 1200
 #define HS_TRIES 3
 
@@ -74,7 +74,7 @@ static void set_state(drydock_midi_state_t st, const char *detail)
     }
 }
 
-/* ---- transport USB-MIDI ---- */
+/* ---- USB-MIDI transport ---- */
 
 static void xfer_cb(usb_transfer_t *xfer)
 {
@@ -93,7 +93,7 @@ static esp_err_t xfer_wait(int timeout_ms)
     return ESP_OK;
 }
 
-/* Découpe un SysEx (avec F0..F7) en paquets MIDI de 4 octets et l'envoie. */
+/* Splits a SysEx (with F0..F7) into 4-byte MIDI packets and sends it. */
 static esp_err_t midi_send_sysex(const uint8_t *sysex, size_t len)
 {
     if (!s_attached || s_xfer == NULL) {
@@ -127,8 +127,8 @@ static esp_err_t midi_send_sysex(const uint8_t *sysex, size_t len)
     return xfer_wait(2000);
 }
 
-/* Reçoit un SysEx complet (F0..F7) : accumulate les paquets 0x4/0x5/0x7.
- * Renvoie 0 si un SysEx est reconstitué (out/out_len), -1 sinon (timeout). */
+/* Receives a complete SysEx (F0..F7): accumulates the 0x4/0x5/0x7 packets.
+ * Returns 0 once a SysEx is reassembled (out/out_len), -1 otherwise (timeout). */
 static int midi_recv_sysex(uint8_t *out, size_t out_cap, size_t *out_len, int timeout_ms)
 {
     uint8_t acc[512];
@@ -153,7 +153,7 @@ static int midi_recv_sysex(uint8_t *out, size_t out_cap, size_t *out_len, int ti
             const uint8_t hdr = s_xfer->data_buffer[i];
             const uint8_t cin = hdr >> 4;
             if (cin != CIN_SYSEX_START && cin != CIN_SYSEX_CONT && cin != CIN_SYSEX_END) {
-                continue; /* message non-SysEx : ignoré */
+                continue; /* non-SysEx message: ignored */
             }
             const size_t take = (size_t)(got - i - 1) < 3 ? (size_t)(got - i - 1) : 3;
             for (size_t k = 0; k < take && n < sizeof(acc); k++) {
@@ -165,14 +165,14 @@ static int midi_recv_sysex(uint8_t *out, size_t out_cap, size_t *out_len, int ti
                     *out_len = n;
                     return 0;
                 }
-                n = 0; /* SysEx tronqué ou mal délimité : on repart */
+                n = 0; /* truncated or badly delimited SysEx: start over */
             }
         }
     }
     return -1;
 }
 
-/* ---- protocole M-UPGRADE ---- */
+/* ---- M-UPGRADE protocol ---- */
 
 static int wait_identity(char *out, size_t out_sz, int timeout_ms)
 {
@@ -201,8 +201,8 @@ static int handshake(char *out, size_t out_sz)
     return -1;
 }
 
-/* Sert les requêtes de lecture 0x30 jusqu'à ce que le FM-1 demande l'adresse
- * de fin (finish). Renvoie 1 si fini, 0 sinon (timeout/lost). */
+/* Serves the 0x30 read requests until the FM-1 asks for the finish address.
+ * Returns 1 if done, 0 otherwise (timeout/lost). */
 static int serve(const uint8_t *image, size_t image_len, uint32_t finish, int idle_ms,
                  int step)
 {
@@ -216,7 +216,7 @@ static int serve(const uint8_t *image, size_t image_len, uint32_t finish, int id
         size_t n = 0;
         if (midi_recv_sysex(pkt, sizeof(pkt), &n, 1000) != 0) {
             if ((uint32_t)xTaskGetTickCount() - last > pdMS_TO_TICKS(idle_ms)) {
-                return 0; /* inactif trop longtemps */
+                return 0; /* idle too long */
             }
             continue;
         }
@@ -237,7 +237,7 @@ static int serve(const uint8_t *image, size_t image_len, uint32_t finish, int id
             continue;
         }
         if (dlen > FW_UP_MAXDATA || addr > image_len || dlen > image_len - addr) {
-            set_state(DRYDOCK_MIDI_ERROR, "requête hors image");
+            set_state(DRYDOCK_MIDI_ERROR, "request out of image");
             return 0;
         }
         uint8_t rsp[FW_UP_MAXDATA + 64];
@@ -245,7 +245,7 @@ static int serve(const uint8_t *image, size_t image_len, uint32_t finish, int id
         if (rn == 0) {
             return 0;
         }
-        vTaskDelay(pdMS_TO_TICKS(10)); /* pacing identique au hub (sleep(10)) */
+        vTaskDelay(pdMS_TO_TICKS(10)); /* pacing identical to the hub (sleep(10)) */
         if (midi_send_sysex(rsp, rn) != ESP_OK) {
             return 0;
         }
@@ -254,14 +254,14 @@ static int serve(const uint8_t *image, size_t image_len, uint32_t finish, int id
             s_cb.on_progress((unsigned)served, addr);
         }
         if (step == 0) {
-            ESP_LOGI(TAG, "verify: %d requêtes, addr=0x%08X", served, addr);
+            ESP_LOGI(TAG, "verify: %d requests, addr=0x%08X", served, addr);
         } else {
-            ESP_LOGI(TAG, "write: %d requêtes, addr=0x%08X", served, addr);
+            ESP_LOGI(TAG, "write: %d requests, addr=0x%08X", served, addr);
         }
     }
 }
 
-/* ---- driver USB Host ---- */
+/* ---- USB Host driver ---- */
 
 static int match_fm1(const usb_device_desc_t *dev, const usb_config_desc_t *cfg)
 {
@@ -273,9 +273,9 @@ static esp_err_t attach_fm1(usb_host_client_handle_t client, usb_device_handle_t
                             const usb_config_desc_t *cfg)
 {
     (void)client;
-    /* interface MIDI streaming : classe Audio (0x01) sous-classe MIDI (0x03),
-     * sinon n'importe quelle interface avec endpoints IN/OUT (le FM-1 expose
-     * MI_00 AudioControl sans endpoint ; Windows ne montre que celle-là). */
+    /* MIDI streaming interface: class Audio (0x01) subclass MIDI (0x03),
+     * otherwise any interface with IN/OUT endpoints (the FM-1 exposes
+     * MI_00 AudioControl without endpoint; Windows only shows that one). */
     const usb_intf_desc_t *iface = drydock_usb_find_data_iface(cfg, 0x01, 0x03, -1);
     if (iface == NULL) {
         iface = drydock_usb_find_data_iface(cfg, -1, -1, -1);
@@ -318,7 +318,7 @@ const drydock_usb_driver_t *drydock_midi_driver(void)
     return &s_driver;
 }
 
-/* ---- tâche moteur ---- */
+/* ---- engine task ---- */
 
 static void midi_task(void *arg)
 {
@@ -338,21 +338,21 @@ static void midi_task(void *arg)
         }
         if (s_flash_pending) {
             s_flash_pending = 0;
-            /* handshake + identité */
+            /* handshake + identity */
             char id[32];
             if (handshake(id, sizeof(id)) != 0) {
-                set_state(DRYDOCK_MIDI_ERROR, "pas de réponse FM-1 (handshake)");
+                set_state(DRYDOCK_MIDI_ERROR, "no FM-1 response (handshake)");
                 continue;
             }
             snprintf(s_identity, sizeof(s_identity), "%s", id);
-            ESP_LOGI(TAG, "identité: %s", id);
+            ESP_LOGI(TAG, "identity: %s", id);
 
-            /* charge le paquet */
+            /* load the packet */
             char path[sizeof(s_flash_path) + 32];
             snprintf(path, sizeof(path), "/drydock/%s", s_flash_path);
             FILE *f = fopen(path, "rb");
             if (f == NULL) {
-                set_state(DRYDOCK_MIDI_ERROR, "paquet introuvable");
+                set_state(DRYDOCK_MIDI_ERROR, "packet not found");
                 continue;
             }
             fseek(f, 0, SEEK_END);
@@ -360,7 +360,7 @@ static void midi_task(void *arg)
             fseek(f, 0, SEEK_SET);
             if (flen <= 0) {
                 fclose(f);
-                set_state(DRYDOCK_MIDI_ERROR, "paquet vide");
+                set_state(DRYDOCK_MIDI_ERROR, "empty packet");
                 continue;
             }
             uint8_t *raw = heap_caps_malloc((size_t)flen, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -369,7 +369,7 @@ static void midi_task(void *arg)
                 if (raw) {
                     free(raw);
                 }
-                set_state(DRYDOCK_MIDI_ERROR, "lecture paquet échouée");
+                set_state(DRYDOCK_MIDI_ERROR, "packet read failed");
                 continue;
             }
             fclose(f);
@@ -380,13 +380,13 @@ static void midi_task(void *arg)
             if (fwsc_logical_image(raw, (size_t)flen, &image, &image_len) != 0 ||
                 fwsc_product_of(raw, (size_t)flen, product, sizeof(product)) != 0) {
                 free(raw);
-                set_state(DRYDOCK_MIDI_ERROR, "paquet invalide");
+                set_state(DRYDOCK_MIDI_ERROR, "invalid packet");
                 continue;
             }
-            free(raw); /* l'image logique est une copie indépendante */
-            ESP_LOGI(TAG, "image logique %u octets, produit %s", (unsigned)image_len, product);
+            free(raw); /* the logical image is an independent copy */
+            ESP_LOGI(TAG, "logical image %u bytes, product %s", (unsigned)image_len, product);
 
-            /* modèle : le paquet est pour un FM-1 (FM-1_xxx) */
+            /* model: the packet is for an FM-1 (FM-1_xxx) */
             char model[24];
             {
                 const char *us = strchr(product, '_');
@@ -397,24 +397,24 @@ static void midi_task(void *arg)
             }
             if (strcmp(model, "FM-1") != 0) {
                 free(image);
-                set_state(DRYDOCK_MIDI_ERROR, "paquet pas pour un FM-1");
+                set_state(DRYDOCK_MIDI_ERROR, "packet not for an FM-1");
                 continue;
             }
 
             set_state(DRYDOCK_MIDI_VERIFY, product);
             if (midi_send_sysex(fw_up_upgrade, sizeof(fw_up_upgrade)) != ESP_OK) {
                 free(image);
-                set_state(DRYDOCK_MIDI_ERROR, "envoi UPGRADE échoué");
+                set_state(DRYDOCK_MIDI_ERROR, "UPGRADE send failed");
                 continue;
             }
             vTaskDelay(pdMS_TO_TICKS(2000));
             if (!serve(image, image_len, FW_UP_FINISH_VERIFY, 8000, 0)) {
                 free(image);
-                set_state(DRYDOCK_MIDI_ERROR, "étape 1 arrêtée (loader non mis en place)");
+                set_state(DRYDOCK_MIDI_ERROR, "step 1 stopped (loader not installed)");
                 continue;
             }
 
-            /* le FM-1 redémarre en loader : attendre la ré-attache ota-FM-1_9XX */
+            /* the FM-1 reboots into the loader: wait for the ota-FM-1_9XX re-attach */
             set_state(DRYDOCK_MIDI_LOADER, NULL);
             {
                 int found_ota = 0;
@@ -433,7 +433,7 @@ static void midi_task(void *arg)
                 }
                 if (!found_ota) {
                     free(image);
-                    set_state(DRYDOCK_MIDI_ERROR, "loader non apparu");
+                    set_state(DRYDOCK_MIDI_ERROR, "loader did not appear");
                     continue;
                 }
             }
@@ -441,18 +441,18 @@ static void midi_task(void *arg)
             set_state(DRYDOCK_MIDI_WRITE, NULL);
             if (midi_send_sysex(fw_up_upgrade, sizeof(fw_up_upgrade)) != ESP_OK) {
                 free(image);
-                set_state(DRYDOCK_MIDI_ERROR, "envoi UPGRADE (loader) échoué");
+                set_state(DRYDOCK_MIDI_ERROR, "UPGRADE send (loader) failed");
                 continue;
             }
             vTaskDelay(pdMS_TO_TICKS(2000));
             if (!serve(image, image_len, FW_UP_FINISH_WRITE, 180000, 1)) {
                 free(image);
-                set_state(DRYDOCK_MIDI_ERROR, "écriture arrêtée (replugger et réessayer)");
+                set_state(DRYDOCK_MIDI_ERROR, "write stopped (replug and retry)");
                 continue;
             }
             free(image);
 
-            /* le FM-1 redémarre dans le nouveau firmware */
+            /* the FM-1 reboots into the new firmware */
             set_state(DRYDOCK_MIDI_REBOOT, NULL);
             {
                 int back = 0;
@@ -470,7 +470,7 @@ static void midi_task(void *arg)
                     }
                 }
                 if (!back) {
-                    set_state(DRYDOCK_MIDI_ERROR, "le FM-1 n'est pas revenu (power-cycle)");
+                    set_state(DRYDOCK_MIDI_ERROR, "the FM-1 didn't come back (power-cycle)");
                     continue;
                 }
             }
@@ -478,7 +478,7 @@ static void midi_task(void *arg)
             continue;
         }
 
-        /* idle : maintient l'identité à jour pour l'écran */
+        /* idle: keeps the identity up to date for the screen */
         if (s_identity[0] == '\0') {
             char id[32];
             if (handshake(id, sizeof(id)) == 0) {
@@ -490,7 +490,7 @@ static void midi_task(void *arg)
     }
 }
 
-/* ---- API publique ---- */
+/* ---- public API ---- */
 
 esp_err_t drydock_midi_init(const drydock_midi_callbacks_t *cb)
 {
@@ -520,7 +520,7 @@ esp_err_t drydock_midi_flash(const char *path)
     }
     if (s_state == DRYDOCK_MIDI_VERIFY || s_state == DRYDOCK_MIDI_WRITE ||
         s_state == DRYDOCK_MIDI_LOADER) {
-        return ESP_ERR_INVALID_STATE; /* un flash est en cours */
+        return ESP_ERR_INVALID_STATE; /* a flash is in progress */
     }
     snprintf(s_flash_path, sizeof(s_flash_path), "%s", path);
     s_flash_pending = 1;

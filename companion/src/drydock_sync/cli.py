@@ -1,4 +1,4 @@
-"""Interface CLI drydock : probe, fetch, list, sync, verify."""
+"""drydock CLI interface: probe, fetch, list, sync, verify."""
 from __future__ import annotations
 
 import os
@@ -35,7 +35,7 @@ def _print_entry(e: ResolvedEntry) -> None:
 
 
 def _fail(message: str) -> NoReturn:
-    typer.secho(f"erreur: {message}", fg=typer.colors.RED, err=True)
+    typer.secho(f"error: {message}", fg=typer.colors.RED, err=True)
     raise typer.Exit(1)
 
 
@@ -45,11 +45,11 @@ def probe() -> None:
     with FirmwareHub() as hub:
         try:
             cat = hub.catalog()
-        except Exception as exc:  # réseau, JSON invalide
-            _fail(f"catalogue thefirmwarehub.com inaccessible: {exc}")
-    print(f"catalogue: {len(cat.firmwares)} firmwares, mise à jour {cat.updated}")
+        except Exception as exc:  # network, invalid JSON
+            _fail(f"catalog thefirmwarehub.com unreachable: {exc}")
+    print(f"catalog: {len(cat.firmwares)} firmwares, updated {cat.updated}")
     vol = device.find_drydock_volume()
-    print(f"volume DRYDOCK: {vol if vol else 'introuvable'}")
+    print(f"volume DRYDOCK: {vol if vol else 'not found'}")
     for vid, pid in device.usb_devices():
         if (vid, pid) == device.ESP32:
             name = "ESP32-S3 (carte Drydock)"
@@ -96,7 +96,7 @@ def list_vessels(
                 try:
                     size = p.stat().st_size
                 except OSError:
-                    _fail(f"{p}: fichier local absent")
+                    _fail(f"{p}: local file missing")
                 print(f"  {v.id:20} local    {size} B  {p}")
 
 
@@ -119,7 +119,7 @@ def fetch(
     print(f"cache: {resolver.cache.root}")
     for e in entries:
         _print_entry(e)
-    print(f"{len(entries)} fichiers prêts à synchroniser")
+    print(f"{len(entries)} files ready to sync")
 
 
 @app.command()
@@ -133,7 +133,7 @@ def doctor(
     # config
     try:
         cfg = load_vessels(config)
-        checks.append(("config", True, f"{len(cfg.vessel)} vessels dans {config}"))
+        checks.append(("config", True, f"{len(cfg.vessel)} vessels in {config}"))
     except Exception as exc:
         checks.append(("config", False, str(exc)))
 
@@ -152,7 +152,7 @@ def doctor(
         with FirmwareHub() as hub:
             cat = hub.catalog()
         hub_ok = True
-        hub_detail = f"{len(cat.firmwares)} firmwares, MAJ {cat.updated}"
+        hub_detail = f"{len(cat.firmwares)} firmwares, updated {cat.updated}"
     except Exception as exc:
         hub_detail = str(exc)
     checks.append(("hub", hub_ok, hub_detail))
@@ -161,12 +161,12 @@ def doctor(
     present = set(device.usb_devices())
     esp = ("303A", "1001") in present
     fm = ("4D4A", "4155") in present
-    checks.append(("usb:esp32", esp, "303A:1001 présent" if esp else "ESP32-S3 introuvable"))
-    checks.append(("usb:fm1", fm, "4D4A:4155 présent" if fm else "FM-1 introuvable"))
+    checks.append(("usb:esp32", esp, "303A:1001 present" if esp else "ESP32-S3 not found"))
+    checks.append(("usb:fm1", fm, "4D4A:4155 present" if fm else "FM-1 not found"))
 
     # volume
     vol = device.find_drydock_volume()
-    checks.append(("volume", vol is not None, str(vol) if vol else "volume DRYDOCK introuvable"))
+    checks.append(("volume", vol is not None, str(vol) if vol else "volume DRYDOCK not found"))
 
     failed = 0
     for name, ok, detail in checks:
@@ -190,7 +190,7 @@ def sync(
         _fail(str(exc))
     dest = target if target is not None else device.find_drydock_volume()
     if dest is None:
-        _fail("volume DRYDOCK introuvable: branch the card in PC Sync mode, or pass --target PATH")
+        _fail("volume DRYDOCK not found: branch the card in PC Sync mode, or pass --target PATH")
     with FirmwareHub() as hub:
         resolver = Resolver(hub, GithubProvider(), Cache(_cache_root(cache)), config.parent)
         try:
@@ -199,13 +199,13 @@ def sync(
         except Exception as exc:
             _fail(str(exc))
     for rel in result.copied:
-        print(f"écrit  {rel}")
+        print(f"wrote  {rel}")
     for rel in result.unchanged:
         print(f"ok     {rel}")
     for err in result.errors:
-        typer.secho(f"erreur {err}", fg=typer.colors.RED, err=True)
+        typer.secho(f"error {err}", fg=typer.colors.RED, err=True)
     if not result.errors:
-        print(f"manifest.json écrit dans {dest}")
+        print(f"manifest.json written to {dest}")
     else:
         raise typer.Exit(1)
 
@@ -217,7 +217,7 @@ def verify(
     """Check every file listed in manifest.json (existence and SHA-256)."""
     dest = target if target is not None else device.find_drydock_volume()
     if dest is None:
-        _fail("volume DRYDOCK introuvable: branch the card in PC Sync mode, or pass --target PATH")
+        _fail("volume DRYDOCK not found: branch the card in PC Sync mode, or pass --target PATH")
     try:
         result = run_verify(dest)
     except Exception as exc:
@@ -227,7 +227,7 @@ def verify(
         typer.secho(f"{status:12} {rel}", fg=color)
     if not result.ok:
         raise typer.Exit(1)
-    print("vérification OK")
+    print("verification OK")
 
 
 if __name__ == "__main__":

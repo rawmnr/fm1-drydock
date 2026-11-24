@@ -1,10 +1,10 @@
-"""Tests hôte bit-à-bit du protocole C (drydock_proto) contre la référence
-python : parseur .fwsc (fm1_rescue.py), ciphers JieLi (jielib.c) et cadrage
-M-UPGRADE du hub (upgrade.c).
+"""Host bit-for-bit tests of the C protocol (drydock_proto) against the Python
+reference: .fwsc parser (fm1_rescue.py), JieLi ciphers (jielib.c) and
+M-UPGRADE framing from the hub (upgrade.c).
 
-Compile firmware/components/drydock_proto en exécutable natif, l'exécute sur
-de vrais .fwsc (cache drydock-sync ou téléchargés) et compare bit à bit avec
-les références python. Skipé si aucun compilateur C hôte n'est disponible.
+Compiles firmware/components/drydock_proto into a native executable, runs it on
+real .fwsc (drydock-sync cache or downloaded) and compares bit for bit with the
+Python references. Skipped if no host C compiler is available.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ import pytest
 PROTO = Path(__file__).resolve().parent.parent.parent / "firmware" / "components" / "drydock_proto"
 
 
-# ---- référence python, portage exact de fm1_rescue.py ----
+# ---- Python reference, exact port of fm1_rescue.py ----
 def crc16(data: bytes, crc: int = 0) -> int:
     for b in data:
         crc ^= b << 8
@@ -68,7 +68,7 @@ def cdb(op: int, sub: int, args: bytes) -> bytes:
     return c + b"\xFF" * (16 - len(c))
 
 
-# ---- référence python, portage exact du hub (upgrade.c) ----
+# ---- Python reference, exact port of the hub (upgrade.c) ----
 def pack7(data: bytes) -> bytes:
     out = bytearray()
     acc = 0
@@ -147,16 +147,16 @@ def app_area_reference(path: Path) -> tuple[str, bytes]:
     return product, app
 
 
-# ---- compilation C hôte ----
+# ---- host C compilation ----
 def _cc() -> str | None:
     for c in ("cc", "gcc"):
         if shutil.which(c):
             return c
-    # Windows : gcc mingw d'IDF (idf-git), si présent
+    # Windows: gcc mingw from IDF (idf-git), if present
     mingw = Path(r"C:/Espressif/tools/idf-git/2.44.0/mingw64/bin/gcc.exe")
     if mingw.is_file():
         return str(mingw)
-    # Windows : zig (cc hôte) installé via pip (ziglang) dans le venv
+    # Windows: zig (host cc) installed via pip (ziglang) in the venv
     import ziglang
 
     z = Path(ziglang.__file__).parent / "zig.exe"
@@ -166,7 +166,7 @@ def _cc() -> str | None:
 
 
 def _cc_cmd(cc: str) -> list[str]:
-    """Zig sert de compilateur C via le sous-commande `cc` (gcc l'appelle direct)."""
+    """Zig serves as a C compiler via the `cc` subcommand (gcc calls it directly)."""
     if Path(cc).name.lower().startswith("zig"):
         return [cc, "cc"]
     return [cc]
@@ -176,7 +176,7 @@ def _cc_cmd(cc: str) -> list[str]:
 def extractor(tmp_path_factory) -> Path:
     cc = _cc()
     if cc is None:
-        pytest.skip("aucun compilateur C hôte disponible")
+        pytest.skip("no host C compiler available")
     bin_dir = tmp_path_factory.mktemp("bin")
     exe = bin_dir / ("fwsc_extract.exe" if sys.platform == "win32" else "fwsc_extract")
     subprocess.run(
@@ -191,7 +191,7 @@ def extractor(tmp_path_factory) -> Path:
 def harness(tmp_path_factory) -> Path:
     cc = _cc()
     if cc is None:
-        pytest.skip("aucun compilateur C hôte disponible")
+        pytest.skip("no host C compiler available")
     bin_dir = tmp_path_factory.mktemp("bin")
     exe = bin_dir / ("proto_harness.exe" if sys.platform == "win32" else "proto_harness")
     subprocess.run(
@@ -209,7 +209,7 @@ def _run_harness(harness: Path, mode: str, data: bytes, *args: str) -> subproces
 
 
 def _fetch_hub(tmp_path: Path, id_: str, name: str) -> Path:
-    """Télécharge un .fwsc réel du hub si absent du cache local (permet de tourner en CI)."""
+    """Download a real .fwsc from the hub if absent from the local cache (allows running in CI)."""
     from drydock_sync.providers.firmware_hub import FirmwareHub
 
     cached = Path.home() / ".cache" / "drydock-sync" / "vessels" / f"{id_}.fwsc"
@@ -240,11 +240,11 @@ def test_c_framer_matches_python_reference(extractor: Path, tmp_path: Path) -> N
 
     assert out["product"] == product
     assert out["app_size"] == len(app) == 0x93000 - 0x4000
-    assert c_hash == py_hash  # zone d'app bit à bit identique à fm1_rescue.py
+    assert c_hash == py_hash  # app area bit for bit identical to fm1_rescue.py
 
 
 def test_c_framer_rejects_official_v15(extractor: Path, tmp_path: Path) -> None:
-    """Le V15 officiel n'est pas au format Felucca : le parseur C doit échouer proprement."""
+    """The official V15 is not in Felucca format: the C parser must fail cleanly."""
     from drydock_sync.providers.firmware_hub import FirmwareHub
 
     cached = Path.home() / ".cache" / "drydock-sync" / "stock" / "fm1_v15_official.fwsc"
@@ -257,13 +257,13 @@ def test_c_framer_rejects_official_v15(extractor: Path, tmp_path: Path) -> None:
         fwsc.write_bytes(data)
     app_out = tmp_path / "v15.app"
     res = subprocess.run([str(extractor), str(fwsc), str(app_out)], capture_output=True, text=True)
-    assert res.returncode != 0  # pas de marqueur FELUCCA-LOADER-1
+    assert res.returncode != 0  # no FELUCCA-LOADER-1 marker
 
 
 def test_pack7_unpack7_roundtrip(harness: Path) -> None:
     data = bytes(range(256)) * 3
     packed = _run_harness(harness, "pack7", data).stdout
-    assert packed == pack7(data)  # bit à bit vs le hub
+    assert packed == pack7(data)  # bit for bit vs the hub
     back = _run_harness(harness, "unpack7", packed).stdout
     assert back == data
 
@@ -271,17 +271,17 @@ def test_pack7_unpack7_roundtrip(harness: Path) -> None:
 def test_upgrade_response_matches_hub(harness: Path) -> None:
     for addr, fl, data in (
         (0x00000100, 0, bytes(range(64))),
-        (0x00001000, 3, bytes(range(256)) * 2),  # taille max 512
-        (0xE0000000, 0, b"success\x00"),     # réponse de fin
+        (0x00001000, 3, bytes(range(256)) * 2),  # max size 512
+        (0xE0000000, 0, b"success\x00"),     # end response
         (0xF0000000, 0, b"success\x00"),
     ):
         res = _run_harness(harness, "response", data, f"{addr}", f"{fl}", f"{len(data)}")
         assert res.returncode == 0
-        assert res.stdout == upgrade_response(addr, data, fl)  # bit à bit vs le hub
+        assert res.stdout == upgrade_response(addr, data, fl)  # bit for bit vs the hub
 
 
 def test_upgrade_request_parse(harness: Path) -> None:
-    # construite par la référence python (même cadrage que le hub)
+    # built by the Python reference (same framing as the hub)
     for addr, ln, fl in ((0x00000000, 64, 0), (0x00001000, 512, 5)):
         body = bytearray([0x00, 0x59, 0x30, 0, 0, 0, fl])
         body += struct.pack("<I", addr) + struct.pack("<H", ln) + b"\x00"
@@ -294,7 +294,7 @@ def test_upgrade_request_parse(harness: Path) -> None:
 
 
 def test_upgrade_identity_parse(harness: Path) -> None:
-    # identité FM-1_900 et ota-FM-1_900 (loader)
+    # FM-1_900 and ota-FM-1_900 (loader) identities
     for text in (b"FM-1_900", b"ota-FM-1_900", b"SLOOP_26"):
         body = bytearray([0x00, 0x59, 0x11]) + b"\x00" * 3 + text + b"\x00" * (34 - 6 - len(text))
         pkt = bytes([0xF0]) + pack7(bytes(body)) + bytes([0xF7])
@@ -306,7 +306,7 @@ def test_upgrade_identity_parse(harness: Path) -> None:
 def test_mengli_matches_python(harness: Path) -> None:
     data = bytes(range(256))
     assert _run_harness(harness, "mengli", data).stdout == mengli(data)
-    # auto-inverse (propriété du chiffre)
+    # self-inverse (cipher property)
     ciphered = _run_harness(harness, "mengli", mengli(data)).stdout
     assert ciphered == data
 
@@ -316,7 +316,7 @@ def test_cdb_matches_python(harness: Path) -> None:
         (0xFB, 0x06, b"\x01\xC0\x20\x00\x02\x00\x00\x12\x34"),  # mem_write
         (0xFD, 0x07, b"\x01\xC0\x20\x00\x00\x10"),              # mem_read
         (0xFC, 0x0B, b""),                                      # read_id
-        (0xFB, 0x01, b"\x00\x40\x00\x00"),                      # erase secteur
+        (0xFB, 0x01, b"\x00\x40\x00\x00"),                      # erase sector
     ):
         res = _run_harness(harness, "cdb", args, f"{op}", f"{sub}", f"{len(args)}")
         assert res.returncode == 0
@@ -332,7 +332,7 @@ def test_chip_key_matches_python(harness: Path) -> None:
     res = _run_harness(harness, "chipkey", bytes(blob))
     assert res.returncode == 0
     assert res.stdout == f"KEY=0x{key:04X}\n".encode()
-    # CRC invalide -> refus
+    # invalid CRC -> rejected
     blob[0] ^= 0xFF
     res = _run_harness(harness, "chipkey", bytes(blob))
     assert res.returncode != 0

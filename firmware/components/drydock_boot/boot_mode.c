@@ -14,7 +14,7 @@ static const char *TAG = "boot_mode";
 
 typedef struct {
     uint32_t magic;
-    uint16_t crc; /* crc16 des octets ci-dessous } */
+    uint16_t crc; /* crc16 of the bytes below } */
     uint8_t mode;
     uint8_t pad;
 } boot_flag_t;
@@ -66,10 +66,10 @@ boot_mode_t boot_mode_next(void)
 void boot_mode_switch(boot_mode_t mode)
 {
     if (mode >= BOOT_MODE_COUNT) {
-        ESP_LOGE(TAG, "mode invalide %d", (int)mode);
+        ESP_LOGE(TAG, "invalid mode %d", (int)mode);
         return;
     }
-    ESP_LOGI(TAG, "bascule vers %s puis redémarrage",
+    ESP_LOGI(TAG, "switching to %s then rebooting",
              mode == BOOT_MODE_PC_SYNC ? "PC_SYNC" : "HOST_FLASH");
     flag_write(mode);
     esp_restart();

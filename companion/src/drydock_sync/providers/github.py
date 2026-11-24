@@ -1,4 +1,4 @@
-"""Releases GitHub directes : résout la release 'latest' et son asset .fwsc."""
+"""Direct GitHub releases: resolves the 'latest' release and its .fwsc asset."""
 from __future__ import annotations
 
 import re
@@ -20,7 +20,7 @@ class GithubProvider:
     def latest_release(self, repo: str) -> dict[str, Any]:
         r = self._client.get(f"{API}/repos/{repo}/releases/latest", headers=self._headers)
         if r.status_code == 404:
-            raise ValueError(f"{repo}: aucune release 'latest' (404)")
+            raise ValueError(f"{repo}: no 'latest' release (404)")
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
@@ -30,7 +30,7 @@ class GithubProvider:
                 return cast(dict[str, Any], asset)
         names = ", ".join(a["name"] for a in release.get("assets", []))
         raise ValueError(
-            f"asset '{pattern}' introuvable dans {release.get('tag_name', '?')} (assets: {names or 'aucun'})"
+            f"asset '{pattern}' not found in {release.get('tag_name', '?')} (assets: {names or 'none'})"
         )
 
     def download_asset(self, asset: dict[str, Any]) -> bytes:

@@ -13,8 +13,8 @@ static const char *TAG = "dry_msc";
 
 static tinyusb_msc_storage_handle_t s_storage_hdl = NULL;
 
-/* Descripteurs TinyUSB : Device + MSC (le volume FAT porte le label DRYDOCK,
- * drydock-sync le détecte par son nom de volume, pas par PID). */
+/* TinyUSB descriptors: Device + MSC (the FAT volume carries the DRYDOCK label,
+ * drydock-sync detects it by its volume name, not by PID). */
 #define EPNUM_MSC 1
 #define TUSB_DESC_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_MSC_DESC_LEN)
 
@@ -51,7 +51,7 @@ static const uint8_t s_msc_config_desc[] = {
 };
 
 static const char *s_string_desc[] = {
-    (const char[]){ 0x09, 0x04 }, /* 0: langue (0x0409 English) */
+    (const char[]){ 0x09, 0x04 }, /* 0: language (0x0409 English) */
     "FM1-Drydock",                /* 1: manufacturer */
     "DRYDOCK",                    /* 2: product */
     "0001",                       /* 3: serial */
@@ -76,7 +76,7 @@ int drydock_msc_is_exposed(void)
 
 esp_err_t drydock_msc_start(wl_handle_t wl_handle)
 {
-    /* Le stockage est créé exposé au PC (MOUNT_USB) : le MCU n'y accède pas. */
+    /* The storage is created exposed to the PC (MOUNT_USB): the MCU doesn't access it. */
     const tinyusb_msc_storage_config_t storage_cfg = {
         .mount_point = TINYUSB_MSC_STORAGE_MOUNT_USB,
         .fat_fs = {
@@ -103,6 +103,6 @@ esp_err_t drydock_msc_start(wl_handle_t wl_handle)
         return ret;
     }
 
-    ESP_LOGI(TAG, "USB MSC actif : volume DRYDOCK exposé au PC (12 Mo)");
+    ESP_LOGI(TAG, "USB MSC active: volume DRYDOCK exposed to the PC (12 MB)");
     return ESP_OK;
 }

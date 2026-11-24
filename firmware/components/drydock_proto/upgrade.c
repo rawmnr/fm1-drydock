@@ -1,5 +1,5 @@
-/* Portage C du protocole M-UPGRADE (thefirmwarehub.com, GPL-3.0, zvenson).
- * Vérifié bit-à-bit par le test hôte companion/tests/test_fwsc.py.
+/* C port of the M-UPGRADE protocol (thefirmwarehub.com, GPL-3.0, zvenson).
+ * Verified bit-to-bit by the host test companion/tests/test_fwsc.py.
  */
 #include "upgrade.h"
 
@@ -49,7 +49,7 @@ size_t fw_up_unpack7(const uint8_t *in, size_t n, uint8_t *out)
 size_t fw_up_response(uint32_t addr, const uint8_t *data, size_t len, uint8_t fl,
                       uint8_t *out, size_t cap)
 {
-    /* corps : 00 59 30 (len+8) (len+8)>>8 00 fl addr(4 LE) len(2 LE) 00 data */
+    /* body: 00 59 30 (len+8) (len+8)>>8 00 fl addr(4 LE) len(2 LE) 00 data */
     uint8_t body[14 + FW_UP_MAXDATA + 1];
     if (len > FW_UP_MAXDATA) {
         return 0;
@@ -123,7 +123,7 @@ int fw_up_parse_identity(const uint8_t *pkt, size_t len, char *out, size_t out_s
     if (dn != 34 || d[0] != 0 || d[1] != 0x59 || d[2] != 0x11) {
         return 0;
     }
-    /* texte d[6..32], NUL-terminé, sans les 0 de fin */
+    /* text d[6..32], NUL-terminated, without the trailing zeros */
     size_t t = 0;
     while (t < 27 && d[6 + t] != 0) {
         t++;

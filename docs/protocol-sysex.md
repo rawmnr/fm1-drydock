@@ -1,114 +1,114 @@
-# Flash FM-1 en mode normal (USB-MIDI SysEx)
+# Flashing the FM-1 in normal mode (USB-MIDI SysEx)
 
-Sources : probe PC du 2026-11-23, script Web MIDI de `thefirmwarehub.com`
-(mesuré le 2026-11-24), `fm1_rescue.py`, catalogue du hub.
+Sources : PC probe of 2026-11-23, Web MIDI script of `thefirmwarehub.com`
+(measured on 2026-11-24), `fm1_rescue.py`, hub catalog.
 
-## Identité mesurée sur USB
+## Identity measured over USB
 
-FM-1 en mode normal : `USB\VID_4D4A&PID_4155`, classe MEDIA (périphérique USB-MIDI),
-interface MI_00 d'un composite. Le protocole de mise à jour est **M-UPGRADE** :
-il passe par le port MIDI standard (SysEx), donc par le même chemin que le Web
-MIDI de la page du hub (Chrome/Edge).
+FM-1 in normal mode : `USB\VID_4D4A&PID_4155`, MEDIA class (USB-MIDI device),
+MI_00 interface of a composite. The update protocol is **M-UPGRADE** :
+it uses the standard MIDI port (SysEx), and therefore the same path as the Web
+MIDI of the hub page (Chrome/Edge).
 
-## Protocole de mise à jour M-UPGRADE (mesuré dans le JS du hub)
+## M-UPGRADE update protocol (measured in the hub JS)
 
-Le portage C vit dans `firmware/components/drydock_proto/upgrade.{c,h}` et le
-moteur USB Host dans `firmware/components/drydock_usb_midi_host/`.
+The C port lives in `firmware/components/drydock_proto/upgrade.{c,h}` and the
+USB Host engine in `firmware/components/drydock_usb_midi_host/`.
 
-### Poignée de main (identité)
+### Handshake (identity)
 
-Envoyer `HS_QUERY` :
+Send `HS_QUERY` :
 
 ```
 F0 00 32 45 00 00 00 40 7F F7
 ```
 
-Le FM-1 répond par un SysEx dont le corps dépaquetté (pack7) fait 34 octets,
-`00 59 11` en tête, texte aux octets 6..32 (NUL-terminé) : l'identité du
-firmware, format `NAME_ddd` (ex. `FM-1_900`, `SLOOP_26`). Le loader de mise à
-jour répond `ota-FM-1_9XX` (`IS_OTA` dans le hub).
+The FM-1 answers with a SysEx whose unpacked (pack7) body is 34 bytes,
+`00 59 11` at the head, text at bytes 6..32 (NUL-terminated) : the identity of
+the firmware, format `NAME_ddd` (e.g. `FM-1_900`, `SLOOP_26`). The update
+loader answers `ota-FM-1_9XX` (`IS_OTA` in the hub).
 
-### Touches
+### Keys
 
-| Touche | SysEx | Effet |
+| Key | SysEx | Effect |
 |---|---|---|
-| `UPGRADE` | `F0 22 24 35 7F F7` | firmware : met en place le loader ; loader : lance l'écriture |
-| `UBOOT_KEY` | `F0 22 24 35 7D F7` | bascule en mode rescue `UBOOT1.00` (voir `protocol-rescue.md`) |
+| `UPGRADE` | `F0 22 24 35 7F F7` | firmware : installs the loader ; loader : starts the write |
+| `UBOOT_KEY` | `F0 22 24 35 7D F7` | switches to `UBOOT1.00` rescue mode (see `protocol-rescue.md`) |
 
-Ne pas confondre les deux (0x7F vs 0x7D).
+Do not confuse the two (0x7F vs 0x7D).
 
-### Paquets de lecture (cmd 0x30)
+### Read packets (cmd 0x30)
 
-Pendant une mise à jour le FM-1 envoie des requêtes de lecture sur **l'image
-logique** (le `.fwsc` sans les 20 octets marqueurs d'identité). Chaque requête
-est un SysEx dont le corps dépaquetté (pack7) fait **15 octets** :
+During an update the FM-1 sends read requests on the **logical image** (the
+`.fwsc` without the 20 identity marker bytes). Each request is a SysEx whose
+unpacked (pack7) body is **15 bytes** :
 
 ```
 00 59 30 xx xx 00 fl a3 a2 a1 a0 l2 l1 l0 ck
 ```
 
-- `addr` (octets 7..10, LE32) et `len` (octets 11..13, LE24) désignent la
-  plage lue dans l'image logique.
-- `ck = ~sum(octets 6..13) & 0xFF` (checksum 8 bits).
-- Adresses spéciales : `0xE0000000` = fin d'étape 1 (le firmware a mis en
-  place le loader), `0xF0000000` = fin d'étape 2 (écriture terminée).
+- `addr` (bytes 7..10, LE32) and `len` (bytes 11..13, LE24) designate the
+  range read in the logical image.
+- `ck = ~sum(bytes 6..13) & 0xFF` (8-bit checksum).
+- Special addresses : `0xE0000000` = end of step 1 (the firmware has installed
+  the loader), `0xF0000000` = end of step 2 (write finished).
 
-### Réponse
+### Answer
 
-Corps dépaquetté `14 + len + 1` octets :
+Unpacked body `14 + len + 1` bytes :
 
 ```
 00 59 30 (len+8)lo (len+8)hi 00 fl a3 a2 a1 a0 llo lhi 00 data... ck
 ```
 
-`ck = ~sum(octets 6..fin de data) & 0xFF`. Le tout est pack7 et enveloppé
-`F0 .. F7`. `len` max : 512 octets (`MAXDATA`). Aux adresses de fin, répondre
-`"success"` (7 octets + checksum).
+`ck = ~sum(bytes 6..end of data) & 0xFF`. The whole is pack7 and wrapped in
+`F0 .. F7`. Max `len` : 512 bytes (`MAXDATA`). At the end addresses, answer
+`"success"` (7 bytes + checksum).
 
-### Séquence d'installation (identique au hub)
+### Installation sequence (identical to the hub)
 
-1. Poignée de main : identité non-OTA ; vérifier que le modèle du paquet
-   correspond (`FM-1_xxx` → FM-1).
-2. Envoyer `UPGRADE`, attendre ~2 s.
-3. Sertir les lectures (fin `0xE0000000`, inactivité 8 s) — le firmware
-   vérifie le paquet et met en place le loader.
-4. Le FM-1 redémarre en loader : attendre l'identité `ota-FM-1_9XX` (30 s).
-5. Envoyer `UPGRADE`, attendre ~2 s, sertir les lectures (fin `0xF0000000`,
-   inactivité 180 s) — le loader écrit l'image complète.
-6. Le FM-1 redémarre : vérifier l'identité `FM-1_xxx` du paquet (40 s).
+1. Handshake : non-OTA identity ; check that the packet model matches
+   (`FM-1_xxx` → FM-1).
+2. Send `UPGRADE`, wait ~2 s.
+3. Serve the reads (end `0xE0000000`, inactivity 8 s) — the firmware
+   verifies the packet and installs the loader.
+4. The FM-1 restarts into the loader : wait for the `ota-FM-1_9XX` identity (30 s).
+5. Send `UPGRADE`, wait ~2 s, serve the reads (end `0xF0000000`,
+   inactivity 180 s) — the loader writes the complete image.
+6. The FM-1 restarts : check the `FM-1_xxx` identity of the packet (40 s).
 
-Si le FM-1 est déjà en mode loader (mise à jour coupée), passer directement à
-l'étape 5 (resume). Ne jamais écrire sur un loader qui n'est pas
-`ota-FM-1_9XX` (loader d'un autre firmware : finir avec son propre installeur).
+If the FM-1 is already in loader mode (interrupted update), go directly to
+step 5 (resume). Never write on a loader that is not `ota-FM-1_9XX` (loader
+from another firmware : finish with its own installer).
 
 ### pack7 / unpack7
 
-Encodage 7 bits big-endian bitstream (LSB first) : chaque octet de sortie
-porte 7 bits d'entrée. `unpack7(pack7(x)) == x`. Côté hub (JS) et côté C
-(`fw_up_pack7`/`fw_up_unpack7`), vérifiés bit à bit par le test hôte
+7-bit big-endian bitstream encoding (LSB first) : each output byte carries
+7 input bits. `unpack7(pack7(x)) == x`. On the hub side (JS) and on the C side
+(`fw_up_pack7`/`fw_up_unpack7`), verified bit by bit by the host test
 `companion/tests/test_fwsc.py`.
 
-## Paquet `.fwsc` (format Felucca)
+## `.fwsc` packet (Felucca format)
 
-Structure lue dans `fm1_rescue.py` (`logical_image`, `app_area`) :
+Structure read in `fm1_rescue.py` (`logical_image`, `app_area`) :
 
-- Marqueur `FELUCCA-LOADER-1` présent dans le paquet : c'est un paquet hub.
-- 20 octets d'identité, un après chacun des 20 premiers blocs de `0x2F` octets. Identité produit : `(octet - i - 1) & 0xFF` pour le bloc `i`, `0x7D` marque l'absence.
-- En-tête `0x40` octets chiffré ENC : CRC-16/XMODEM sur `[2..0x40]`, nombre d'entrées (u16 LE) en offset 8.
-- Liste de fichiers : `count × 0x50` octets chiffrés ENC. Entrée : type (u16 LE), crc du fichier (u16 LE à 4), offset (u32 LE à 8), taille (u32 LE à 12). Type `0` = `flash.bin`.
-- Zone d'app dans `flash.bin` : `[0x4000, 0x93000)` (voir `protocol-rescue.md`).
-- Raccourci catalogue : identité produit au format `FM-1_975` (`product`), `ident` est une regex de correspondance.
+- The `FELUCCA-LOADER-1` marker present in the packet : it is a hub packet.
+- 20 identity bytes, one after each of the first 20 blocks of `0x2F` bytes. Product identity : `(byte - i - 1) & 0xFF` for block `i`, `0x7D` marking absence.
+- `0x40`-byte ENC-encrypted header : CRC-16/XMODEM over `[2..0x40]`, entry count (u16 LE) at offset 8.
+- File list : `count × 0x50` ENC-encrypted bytes. Entry : type (u16 LE), file crc (u16 LE at 4), offset (u32 LE at 8), size (u32 LE at 12). Type `0` = `flash.bin`.
+- App zone in `flash.bin` : `[0x4000, 0x93000)` (see `protocol-rescue.md`).
+- Catalog shortcut : product identity in `FM-1_975` format (`product`), `ident` is a matching regex.
 
-Le V15 officiel M-VAVE n'est pas au format Felucca (pas de marqueur de loader).
-Il s'installe par la page du hub, qui sert le fichier M-VAVE vérifié octet par
-octet (SHA-256 `db1642b2…` épinglé, taille 699 956, produit `FM-1_015`). Un
-rescue se fait d'abord avec un firmware hub, puis V15 depuis la page.
+The official M-VAVE V15 is not in Felucca format (no loader marker).
+It is installed through the hub page, which serves the M-VAVE file verified
+byte by byte (SHA-256 `db1642b2…` pinned, size 699 956, product `FM-1_015`).
+A rescue is done first with a hub firmware, then V15 from the page.
 
-## Catalogue distant (pour `firmware_hub.py`)
+## Remote catalog (for `firmware_hub.py`)
 
 `GET https://thefirmwarehub.com/catalog.json`
 
-Structure mesurée le 2026-11-23 :
+Structure measured on 2026-11-23 :
 
 ```json
 {
@@ -134,10 +134,13 @@ Structure mesurée le 2026-11-23 :
 }
 ```
 
-- `pkg` est relatif à la racine du hub (`fw/<id>-<version>.fwsc`), absolu (hébergé GitHub) pour les fiches link-only.
-- `chip` : `old` (flash `0x856014`) ou `new` (`0xB36014`, unités vendues depuis automne 2026). Un firmware qui ne connaît que l'ancien chip garde les sauvegardes en RAM sur les nouvelles unités.
-- Licence du catalogue : CC-BY-4.0, attribution du hub, lire au plus une fois par jour.
+- `pkg` is relative to the hub root (`fw/<id>-<version>.fwsc`), absolute (hosted on GitHub) for link-only entries.
+- `chip` : `old` (flash `0x856014`) or `new` (`0xB36014`, units sold since fall 2026). A firmware that only knows the old chip keeps the saves in RAM on the new units.
+- Catalog license : CC-BY-4.0, hub attribution, read at most once a day.
 
-## Sécurité
+## Security
 
-Vérifier le SHA-256 du paquet téléchargé contre le catalogue avant tout envoi au FM-1 (le hub fait la même vérification avant d'offrir un paquet). Rien ne part vers un serveur au flash : les paquets sont servis par le hub, miroirs intacts des releases GitHub.
+Verify the SHA-256 of the downloaded packet against the catalog before any
+send to the FM-1 (the hub does the same verification before offering a packet).
+Nothing goes to a server during the flash : the packets are served by the hub,
+mirrors intact of the GitHub releases.

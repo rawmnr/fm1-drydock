@@ -1,22 +1,22 @@
-/* boot_mode.h — dual-role USB-C : HOST_FLASH (défaut) / DEVICE_PC_SYNC.
- * Le flag vit en RTC_NOINIT (survit à esp_restart, PAS à une coupure d'alimentation),
- * avec magic + CRC pour rejeter un flag corrompu.
+/* boot_mode.h — dual-role USB-C: HOST_FLASH (default) / DEVICE_PC_SYNC.
+ * The flag lives in RTC_NOINIT (survives esp_restart, NOT a power cut),
+ * with magic + CRC to reject a corrupted flag.
  */
 #pragma once
 
 #include <stdint.h>
 
 typedef enum {
-    BOOT_MODE_HOST_FLASH = 0,   /* défaut : SD locale + USB Host (flash FM-1) */
-    BOOT_MODE_PC_SYNC = 1,      /* TinyUSB MSC : expose la SD au PC */
+    BOOT_MODE_HOST_FLASH = 0,   /* default: local SD + USB Host (flash FM-1) */
+    BOOT_MODE_PC_SYNC = 1,      /* TinyUSB MSC: expose the SD to the PC */
     BOOT_MODE_COUNT
 } boot_mode_t;
 
-/** Mode qui sera appliqué au prochain boot (basculé via bootmode_switch). */
+/** Mode that will be applied at the next boot (switched via bootmode_switch). */
 boot_mode_t boot_mode_next(void);
 
-/** Lit le mode courant effectif (flag validé, sinon HOST_FLASH). */
+/** Reads the current effective mode (validated flag, otherwise HOST_FLASH). */
 boot_mode_t boot_mode_current(void);
 
-/** Demande un redémarrage dans le mode donné (écrit le flag puis esp_restart). */
+/** Requests a restart in the given mode (writes the flag then esp_restart). */
 void boot_mode_switch(boot_mode_t mode);

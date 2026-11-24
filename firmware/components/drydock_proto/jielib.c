@@ -1,6 +1,6 @@
-/* Portage C des algorithmes de fm1_rescue.py (GPL-3.0, thefirmwarehub.com)
- * et jl-uboot-tool (MIT, kagaimiq). Vérifié bit-à-bit par le test hôte
- * companion/tests/test_fwsc.py contre la référence Python.
+/* C port of the fm1_rescue.py algorithms (GPL-3.0, thefirmwarehub.com)
+ * and jl-uboot-tool (MIT, kagaimiq). Verified bit-to-bit by the host test
+ * companion/tests/test_fwsc.py against the Python reference.
  */
 #include "jielib.h"
 
@@ -32,7 +32,7 @@ void fw_sfc(uint8_t *buf, size_t size, uint16_t key)
     }
 }
 
-/* "孟黎我爱你，玉林" en GB2312 : la magie du chiffre MengLi. */
+/* "孟黎我爱你，玉林" in GB2312: the magic of the MengLi cipher. */
 static const uint8_t s_magic[16] = { 0xC3, 0xCF, 0xC0, 0xE8, 0xCE, 0xD2, 0xB0, 0xAE,
                                      0xC4, 0xE3, 0xA3, 0xAC, 0xD3, 0xF1, 0xC1, 0xD6 };
 

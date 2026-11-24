@@ -1,20 +1,21 @@
-/* drydock_usb_msc_device — mode DEVICE_PC_SYNC : expose la partition FAT
- * interne (Wear Levelling) au PC en USB Mass Storage (TinyUSB MSC spiflash).
+/* drydock_usb_msc_device — DEVICE_PC_SYNC mode: exposes the internal FAT
+ * partition (Wear Levelling) to the PC as USB Mass Storage (TinyUSB MSC
+ * spiflash).
  *
- * Exclusion mutuelle stricte : en PC_SYNC le MCU ne monte PAS le VFS local.
- * Le handle WL vient de drydock_storage (drydock_fs_wl_init) ; ce composant
- * ne touche qu'au bloc, jamais au système de fichiers.
+ * Strict mutual exclusion: in PC_SYNC the MCU does NOT mount the local VFS.
+ * The WL handle comes from drydock_storage (drydock_fs_wl_init); this
+ * component only touches the block, never the filesystem.
  */
 #pragma once
 
 #include "esp_err.h"
 #include "wear_levelling.h"
 
-/** Démarre l'USB Device MSC exposant le bloc WL. Renvoie ESP_OK si l'USB est prêt. */
+/** Starts the USB Device MSC exposing the WL block. Returns ESP_OK if the USB is ready. */
 esp_err_t drydock_msc_start(wl_handle_t wl_handle);
 
-/** État courant : 1 si le stockage est exposé au PC (MOUNT_USB). */
+/** Current state: 1 if the storage is exposed to the PC (MOUNT_USB). */
 int drydock_msc_is_exposed(void);
 
-/** 1 si l'hôte USB est encore connecté (câble branché / énuméré). */
+/** 1 if the USB host is still connected (cable plugged in / enumerated). */
 bool drydock_msc_host_connected(void);

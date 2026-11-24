@@ -33,13 +33,13 @@ def test_verify_missing_target_fails(tmp_path: Path) -> None:
 
 
 def test_sync_writes_manifest_via_cli(tmp_path: Path) -> None:
-    # config explicitement absente : échoue proprement (indépendant du CWD,
-    # où un vrai vessels.toml utilisateur peut exister)
+    # config explicitly absent: fails cleanly (independent of the CWD,
+    # where a real user vessels.toml may exist)
     result = runner.invoke(
         app, ["sync", "--target", str(tmp_path), "--config", str(tmp_path / "nope.toml")]
     )
     assert result.exit_code == 1
-    assert "vessels.toml" in result.output or "erreur" in result.output
+    assert "vessels.toml" in result.output or "error" in result.output
 
 
 def test_doctor_reports_all_checks(tmp_path: Path, monkeypatch, sample_catalog: dict) -> None:
@@ -50,7 +50,7 @@ def test_doctor_reports_all_checks(tmp_path: Path, monkeypatch, sample_catalog: 
     cfg = tmp_path / "vessels.toml"
     cfg.write_text("[[vessel]]\nid = \"sloop\"\nsource = \"firmware_hub\"\n", encoding="utf-8")
 
-    # fake hub réactif
+    # responsive fake hub
     from drydock_sync.providers.firmware_hub import HubCatalog
 
     class FakeHub(FirmwareHub):
@@ -65,6 +65,6 @@ def test_doctor_reports_all_checks(tmp_path: Path, monkeypatch, sample_catalog: 
     monkeypatch.setattr(device_mod, "find_drydock_volume", lambda: None)
 
     result = runner.invoke(app, ["doctor", "--config", str(cfg), "--cache", str(tmp_path / "cache")])
-    assert result.exit_code == 1  # volume absent -> échec
+    assert result.exit_code == 1  # volume missing -> failure
     for name in ("config", "cache", "hub", "usb:esp32", "usb:fm1", "volume"):
         assert name in result.output

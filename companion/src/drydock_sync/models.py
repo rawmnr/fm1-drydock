@@ -1,8 +1,8 @@
-"""Modèles Pydantic alignés sur schema/manifest.schema.json.
+"""Pydantic models aligned with schema/manifest.schema.json.
 
-Toute modification de la structure de manifest.json doit être répercutée
-simultanément dans schema/manifest.schema.json, ce fichier et
-firmware/components/drydock_storage/ (règle AGENTS.md).
+Any change to the manifest.json structure must be mirrored
+simultaneously in schema/manifest.schema.json, this file and
+firmware/components/drydock_storage/ (AGENTS.md rule).
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
 
 class Source(StrEnum):
-    """Origine d'un firmware dans vessels.toml."""
+    """Origin of a firmware in vessels.toml."""
 
     firmware_hub = "firmware_hub"
     github = "github"
@@ -26,7 +26,7 @@ class Source(StrEnum):
 
 
 class FileEntry(BaseModel):
-    """Une entrée du manifest : stock_v15 ou un élément de vessels."""
+    """A manifest entry: stock_v15 or a vessels element."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -43,7 +43,7 @@ class FileEntry(BaseModel):
 
 
 class RescueHelper(BaseModel):
-    """Helper loader JieLi (wl82loader.bin), stocké sous rescue/."""
+    """JieLi loader helper (wl82loader.bin), stored under rescue/."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -52,7 +52,7 @@ class RescueHelper(BaseModel):
 
 
 class Manifest(BaseModel):
-    """/drydock/manifest.json (partition FAT interne), le contrat partagé PC <-> ESP32."""
+    """/drydock/manifest.json (internal FAT partition), the shared PC <-> ESP32 contract."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -67,7 +67,7 @@ class Manifest(BaseModel):
 
 
 class VesselConfig(BaseModel):
-    """Une entrée [[vessel]] de vessels.toml."""
+    """A [[vessel]] entry of vessels.toml."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -88,7 +88,7 @@ class VesselConfig(BaseModel):
 
 
 class VesselsConfig(BaseModel):
-    """Contenu de vessels.toml : une liste [[vessel]] à la racine."""
+    """Contents of vessels.toml: a top-level [[vessel]] list."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -96,6 +96,6 @@ class VesselsConfig(BaseModel):
 
 
 def load_vessels(path: Path) -> VesselsConfig:
-    """Parse un fichier vessels.toml et valide les contraintes par source."""
+    """Parse a vessels.toml file and validate constraints by source."""
     with path.open("rb") as f:
         return VesselsConfig.model_validate(tomllib.load(f))

@@ -1,39 +1,39 @@
-# FM1-Drydock — Spécification Technique & Architecture
+# FM1-Drydock — Technical Specification & Architecture
 
-## 1. Objectif
-**FM1-Drydock** transforme une carte **Waveshare ESP32-S3-Touch-AMOLED-1.8** en une cartouche autonome et tactile capable de stocker et flasher hors-ligne des firmwares (custom, Stock V15 officiel, et Rescue) sur un synthétiseur **M-VAVE FM-1**, avec une synchronisation PC → ESP32 et un flashage ESP32 → FM-1 **100 % USB-C**.
+## 1. Objective
+**FM1-Drydock** turns a **Waveshare ESP32-S3-Touch-AMOLED-1.8** board into a standalone touchscreen cartridge able to store and flash firmware offline (custom, official Stock V15, and Rescue) on an **M-VAVE FM-1** synthesizer, with PC → ESP32 synchronization and ESP32 → FM-1 flashing **100% USB-C**.
 
-## 2. Matériel cible
-### 2.1 Cartouche : Waveshare ESP32-S3-Touch-AMOLED-1.8
-- **MCU** : ESP32-S3R8 (16 Mo Flash, 8 Mo OPI PSRAM).
-- **Écran** : AMOLED 1.8" 368×448 QSPI.
-  - **Révision V1** : contrôleur `SH8601` + tactile `FT3168`.
-  - **Révision V2** : contrôleur `CO5300` + tactile `CST820`.
-- **Stockage** : partition **Flash interne `drydock_fs`** 12 Mo (`data/fat`, Wear Levelling). Slot microSD en option future (SDMMC 1-bit, CS via expander I2C `TCA9554` EXIO7).
+## 2. Target hardware
+### 2.1 Cartridge : Waveshare ESP32-S3-Touch-AMOLED-1.8
+- **MCU** : ESP32-S3R8 (16 MB Flash, 8 MB OPI PSRAM).
+- **Display** : 1.8" AMOLED 368×448 QSPI.
+  - **Revision V1** : `SH8601` controller + `FT3168` touchscreen.
+  - **Revision V2** : `CO5300` controller + `CST820` touchscreen.
+- **Storage** : **Internal Flash `drydock_fs`** 12 MB partition (`data/fat`, Wear Levelling). Optional microSD slot in the future (SDMMC 1-bit, CS through I2C expander `TCA9554` EXIO7).
 - **PMU** : `AXP2101`.
-- **USB-C** : port unique relié à l'USB-OTG natif de l'ESP32-S3 (`GPIO19` D-, `GPIO20` D+).
+- **USB-C** : single port connected to the native USB-OTG of the ESP32-S3 (`GPIO19` D-, `GPIO20` D+).
 
-### 2.2 Cible : M-VAVE FM-1
-- **Flash normal** : via **USB-MIDI SysEx** (fichiers `.fwsc`), identique au mécanisme Web MIDI de `thefirmwarehub.com`.
-- **Retour Stock** : firmware officiel **FM-1 V15** (Apache-2.0, indispensable comme base propre avant certaines migrations pour éviter les erreurs de partitionnement).
-- **Mode Rescue** : bootloader ROM JieLi (`UBOOT1.00`), exposé en **USB Mass Storage (MSC)** avec commandes **SCSI** propriétaires (référence : `fm1_rescue.py` et `jl-uboot-tool`).
+### 2.2 Target : M-VAVE FM-1
+- **Normal flash** : via **USB-MIDI SysEx** (`.fwsc` files), identical to the Web MIDI mechanism of `thefirmwarehub.com`.
+- **Back to Stock** : official **FM-1 V15** firmware (Apache-2.0, essential as a clean base before certain migrations to avoid partitioning errors).
+- **Rescue mode** : JieLi ROM bootloader (`UBOOT1.00`), exposed as **USB Mass Storage (MSC)** with proprietary **SCSI** commands (reference : `fm1_rescue.py` and `jl-uboot-tool`).
 
-## 3. Architecture Dual-Role USB-C
-Les piles USB Device (TinyUSB) et USB Host (`usb_host_lib`) ne cohabitant pas dynamiquement sur ESP32-S3, le changement de rôle s'effectue par **redémarrage rapide (~300 ms)** via un flag en RAM RTC (`RTC_NOINIT_ATTR`) :
+## 3. Dual-Role USB-C Architecture
+Since the USB Device (TinyUSB) and USB Host (`usb_host_lib`) stacks cannot coexist dynamically on the ESP32-S3, the role switch happens through a **quick restart (~300 ms)** via an RTC RAM flag (`RTC_NOINIT_ATTR`) :
 
-1. **Mode `HOST_FLASH` (défaut au boot)** :
-   - Monte la partition FAT interne **`drydock_fs`** (12 Mo, Wear Levelling) sur `/drydock`.
-   - Parse `manifest.json` et affiche le catalogue sur l'AMOLED.
-   - Active `usb_host_lib` pour détecter le FM-1 (USB-MIDI en mode normal, USB-MSC `UBOOT1.00` en mode Rescue).
-2. **Mode `DEVICE_PC_SYNC` (activé depuis l'UI tactile)** :
-   - Écrit le flag RTC et redémarre.
-   - **N'accède pas au système de fichiers en local** ; expose la partition `spiflash` en **USB Mass Storage (TinyUSB MSC)** avec le label `DRYDOCK` (exclusion mutuelle stricte avec le VFS local).
-   - Le PC synchronise les firmwares via `drydock-sync`.
-   - Un tap sur **Done** (ou débranchement) remet le flag sur `HOST_FLASH` et redémarre.
+1. **`HOST_FLASH` mode (default at boot)** :
+   - Mounts the internal **`drydock_fs`** FAT partition (12 MB, Wear Levelling) on `/drydock`.
+   - Parses `manifest.json` and displays the catalog on the AMOLED.
+   - Enables `usb_host_lib` to detect the FM-1 (USB-MIDI in normal mode, USB-MSC `UBOOT1.00` in Rescue mode).
+2. **`DEVICE_PC_SYNC` mode (enabled from the touch UI)** :
+   - Writes the RTC flag and restarts.
+   - **Does not access the file system locally** ; exposes the `spiflash` partition as **USB Mass Storage (TinyUSB MSC)** with the `DRYDOCK` label (strict mutual exclusion with the local VFS).
+   - The PC syncs the firmwares via `drydock-sync`.
+   - A tap on **Done** (or unplugging) resets the flag to `HOST_FLASH` and restarts.
 
-## 4. Contrat de stockage Flash interne (`/drydock`)
+## 4. Internal Flash storage contract (`/drydock`)
 
-Stockage par défaut : partition `drydock_fs` (`data/fat`, 12 Mo) dans la Flash 16 Mo de l'ESP32-S3, montée par `esp_vfs_fat_spiflash_mount_rw_wl()` (`format_if_mount_failed = true` au premier boot). La microSD reste une option future (même layout).
+Default storage : the `drydock_fs` partition (`data/fat`, 12 MB) in the 16 MB Flash of the ESP32-S3, mounted by `esp_vfs_fat_spiflash_mount_rw_wl()` (`format_if_mount_failed = true` on first boot). The microSD remains a future option (same layout).
 
 ```text
 /drydock/
@@ -49,7 +49,7 @@ Stockage par défaut : partition `drydock_fs` (`data/fat`, 12 Mo) dans la Flash 
 └── backups/
 ```
 
-### Structure de `manifest.json`
+### `manifest.json` structure
 
 ```json
 {
@@ -84,38 +84,38 @@ Stockage par défaut : partition `drydock_fs` (`data/fat`, 12 Mo) dans la Flash 
 }
 ```
 
-## 5. Spécification du compagnon PC (`companion/`)
+## 5. PC companion specification (`companion/`)
 
 - **Stack** : Python 3.12+, `uv`, `typer`, `httpx`, `pydantic`.
-- **Configuration** : fichier déclaratif `vessels.toml` listant les firmwares souhaités (`firmware_hub`, `github`, `local`).
-- **Commandes CLI** :
-  - `drydock probe` : inspecte le catalogue distant (`thefirmwarehub.com`) et les périphériques USB connectés au PC (ESP32 / FM-1).
-  - `drydock fetch` : télécharge et met en cache local les dernières versions configurées + Stock V15 + helper Rescue.
-  - `drydock sync [--target PATH]` : détecte automatiquement le volume USB `DRYDOCK`, copie uniquement les fichiers modifiés (diff SHA-256), vérifie l'intégrité et écrit `manifest.json` de manière atomique.
-  - `drydock verify [--target PATH]` : vérifie tous les SHA-256 présents sur la carte SD par rapport au `manifest.json`.
+- **Configuration** : declarative `vessels.toml` file listing the desired firmwares (`firmware_hub`, `github`, `local`).
+- **CLI commands** :
+  - `drydock probe` : inspects the remote catalog (`thefirmwarehub.com`) and the USB devices connected to the PC (ESP32 / FM-1).
+  - `drydock fetch` : downloads and caches locally the latest configured versions + Stock V15 + Rescue helper.
+  - `drydock sync [--target PATH]` : automatically detects the `DRYDOCK` USB volume, copies only the modified files (SHA-256 diff), verifies integrity and writes `manifest.json` atomically.
+  - `drydock verify [--target PATH]` : verifies all SHA-256 values present on the SD card against the `manifest.json`.
 
-## 6. Spécification du firmware ESP32-S3 (`firmware/`)
+## 6. ESP32-S3 firmware specification (`firmware/`)
 
-- **Stack** : ESP-IDF ≥ 5.5, LVGL 9, BSP Waveshare.
-- **Stockage** : `drydock_storage` monte `/drydock` (FAT `drydock_fs` 12 Mo) via wear levelling ; `drydock_usb_msc_device` l'expose au PC en `DEVICE_PC_SYNC`. En ce mode le VFS local n'est pas monté.
-- **Écrans UI (368×448 tactile)** :
-  1. **Accueil / Liste des Vessels** : liste scrollable (nom, version, catégorie), indicateur de connexion FM-1, accès rapide **PC Sync** et **Rescue / Stock**.
-  2. **Détail d'un Vessel** : description, auteur, version, taille, bouton **Flash** (avec option recommandée *Flash Stock V15 first*).
-  3. **Progression de Flash** : vérification SHA-256 avant envoi, barre de progression temps réel, statut de vérification finale.
-  4. **Rescue & Stock** : bouton dédié **Back to Stock V15**, bouton **Enter Bootloader**, et mode **Rescue `UBOOT1.00`** (flash de récupération).
-  5. **PC Sync** : écran d'état USB Mass Storage actif + bouton **Done (Reboot to Dock)**.
+- **Stack** : ESP-IDF ≥ 5.5, LVGL 9, Waveshare BSP.
+- **Storage** : `drydock_storage` mounts `/drydock` (FAT `drydock_fs` 12 MB) via wear levelling ; `drydock_usb_msc_device` exposes it to the PC in `DEVICE_PC_SYNC`. In that mode the local VFS is not mounted.
+- **UI screens (368×448 touch)** :
+  1. **Home / Vessels List** : scrollable list (name, version, category), FM-1 connection indicator, quick access to **PC Sync** and **Rescue / Stock**.
+  2. **Vessel Detail** : description, author, version, size, **Flash** button (with the recommended *Flash Stock V15 first* option).
+  3. **Flash Progress** : SHA-256 verification before sending, real-time progress bar, final verification status.
+  4. **Rescue & Stock** : dedicated **Back to Stock V15** button, **Enter Bootloader** button, and **Rescue `UBOOT1.00`** mode (recovery flash).
+  5. **PC Sync** : active USB Mass Storage status screen + **Done (Reboot to Dock)** button.
 
-## 7. Feuille de route (Phases)
+## 7. Roadmap (Phases)
 
-- **Phase 0 — Discovery matériel (HIL sur PC)** :
-  - Identifier la révision matérielle de la Waveshare (V1 vs V2) et valider un boot ESP-IDF + écran AMOLED + lecture microSD.
-  - Inspecter le FM-1 connecté au PC (VID/PID USB-MIDI, endpoints, structure des paquets `.fwsc` et catalogue JSON de `thefirmwarehub.com`).
-  - Valider le lien physique USB-C ESP32 (Host) ↔ FM-1 (énumération, gestion CC1/CC2 et VBUS).
+- **Phase 0 — Hardware discovery (HIL on PC)** :
+  - Identify the Waveshare hardware revision (V1 vs V2) and validate an ESP-IDF boot + AMOLED screen + microSD read.
+  - Inspect the FM-1 connected to the PC (VID/PID USB-MIDI, endpoints, structure of the `.fwsc` packets and JSON catalog of `thefirmwarehub.com`).
+  - Validate the physical USB-C link ESP32 (Host) ↔ FM-1 (enumeration, CC1/CC2 management and VBUS).
 - **Phase 1 — Companion CLI (`companion/`)** :
-  - Implémenter `firmware_hub.py`, `models.py`, `syncer.py` et les tests unitaires.
+  - Implement `firmware_hub.py`, `models.py`, `syncer.py` and the unit tests.
 - **Phase 2 — Core USB Firmware (`firmware/`)** :
-  - Implémenter `drydock_usb_msc_device` (PC Sync) + `drydock_storage`.
-  - Implémenter `drydock_usb_midi_host` (flash `.fwsc` vers FM-1) — moteur M-UPGRADE complet (handshake, serve 0x30, touches UPGRADE/UBOOT).
-  - Implémenter `drydock_usb_rescue_host` (portage C de `fm1_rescue.py` / `jl-uboot-tool`) — BOT/SCSI, helper loader, clé chip, flash sectoriel relu.
-- **Phase 3 — UI LVGL & Intégration** :
-  - Interface tactile complète (accueil, détail+flash, Rescue & Stock, PC Sync, USB Diag, barre de statut), vérification SHA-256 pré-flash, packaging des releases.
+  - Implement `drydock_usb_msc_device` (PC Sync) + `drydock_storage`.
+  - Implement `drydock_usb_midi_host` (flash `.fwsc` to FM-1) — full M-UPGRADE engine (handshake, serve 0x30, UPGRADE/UBOOT keys).
+  - Implement `drydock_usb_rescue_host` (C port of `fm1_rescue.py` / `jl-uboot-tool`) — BOT/SCSI, helper loader, chip key, reread sectorial flash.
+- **Phase 3 — LVGL UI & Integration** :
+  - Complete touch interface (home, detail+flash, Rescue & Stock, PC Sync, USB Diag, status bar), pre-flash SHA-256 verification, release packaging.

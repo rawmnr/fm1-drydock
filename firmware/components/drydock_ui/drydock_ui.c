@@ -1,11 +1,11 @@
-/* Interface LVGL 9 de la cartouche (368x448 tactile).
+/* LVGL 9 interface of the cartridge (368x448 touch).
  *
- * Écrans : accueil (liste des vessels), détail + flash (barre de progression),
- * Rescue & Stock, PC Sync (état MSC + Done & Reboot), USB Diag. Barre de
- * statut en haut : DRYDOCK, batterie AXP2101, état USB, espace libre.
+ * Screens: home (vessel list), detail + flash (progress bar),
+ * Rescue & Stock, PC Sync (MSC state + Done & Reboot), USB Diag. Status bar
+ * on top: DRYDOCK, AXP2101 battery, USB state, free space.
  *
- * En mode DEVICE_PC_SYNC le VFS n'est pas monté : seul l'écran PC Sync est
- * construit (le manifest et la liste des vessels sont inaccessibles).
+ * In DEVICE_PC_SYNC mode the VFS isn't mounted: only the PC Sync screen is
+ * built (the manifest and vessel list are inaccessible).
  */
 #include "drydock_ui.h"
 
@@ -41,12 +41,12 @@ static lv_obj_t *s_scr_rescue;
 static lv_obj_t *s_scr_sync;
 static lv_obj_t *s_scr_diag;
 
-/* barre de statut (labels recréés à chaque écran) */
+/* status bar (labels recreated for each screen) */
 static lv_obj_t *s_bar_batt;
 static lv_obj_t *s_bar_usb;
 static lv_obj_t *s_bar_fs;
 
-/* écran détail */
+/* detail screen */
 static lv_obj_t *s_det_name;
 static lv_obj_t *s_det_meta;
 static lv_obj_t *s_det_desc;
@@ -57,20 +57,20 @@ static lv_obj_t *s_det_flash_btn;
 static lv_obj_t *s_det_stock_first;
 static drydock_vessel_t s_current_vessel;
 
-/* écran rescue */
+/* rescue screen */
 static lv_obj_t *s_res_status;
 
-/* écran sync */
+/* sync screen */
 static lv_obj_t *s_sync_status;
 
-/* écran diag */
+/* diag screen */
 static lv_obj_t *s_diag_text;
 
-static volatile int s_flashing; /* 1 si un flash MIDI est en cours */
+static volatile int s_flashing; /* 1 if a MIDI flash is in progress */
 
 static void screen_back_cb(lv_event_t *e);
 
-/* ---- helpers UI ---- */
+/* ---- UI helpers ---- */
 
 static void status_bar(lv_obj_t *scr)
 {
@@ -128,7 +128,7 @@ static void refresh_status(void)
 {
     char txt[48];
 
-    /* batterie AXP2101 (bus I2C du BSP) */
+    /* AXP2101 battery (BSP I2C bus) */
     i2c_master_bus_handle_t bus = bsp_i2c_get_handle();
     if (bus != NULL) {
         const i2c_device_config_t cfg = {
@@ -152,7 +152,7 @@ static void refresh_status(void)
         }
     }
 
-    /* état USB : FM-1 MIDI / rescue / absent */
+    /* USB state: FM-1 MIDI / rescue / absent */
     const char *usb = "--";
     if (drydock_rescue_connected()) {
         usb = "UBOOT";
@@ -163,7 +163,7 @@ static void refresh_status(void)
         lv_label_set_text(s_bar_usb, usb);
     }
 
-    /* espace libre */
+    /* free space */
     uint64_t free_b = 0;
     if (drydock_fs_free(&free_b) == ESP_OK) {
         snprintf(txt, sizeof(txt), "%lluM", (unsigned long long)(free_b >> 20));
@@ -173,7 +173,7 @@ static void refresh_status(void)
     }
 }
 
-/* ---- écran d'accueil (liste des vessels) ---- */
+/* ---- home screen (vessel list) ---- */
 
 static void home_btn(lv_obj_t *scr, const char *txt, int idx, lv_event_cb_t cb)
 {
@@ -198,7 +198,7 @@ static void home_rescue_cb(lv_event_t *e)
 static void home_sync_cb(lv_event_t *e)
 {
     (void)e;
-    ESP_LOGI(TAG, "bascule PC_SYNC (MSC) depuis l'UI");
+    ESP_LOGI(TAG, "switching PC_SYNC (MSC) from the UI");
     boot_mode_switch(BOOT_MODE_PC_SYNC);
 }
 
@@ -220,7 +220,7 @@ static void vessel_click_cb(lv_event_t *e)
     snprintf(meta, sizeof(meta), "%s · v%s · %s", v->id, v->version, v->category);
     lv_label_set_text(s_det_meta, meta);
     char desc[160];
-    snprintf(desc, sizeof(desc), "SHA-256: %.16s…\nTaille: %u Ko", v->sha256,
+    snprintf(desc, sizeof(desc), "SHA-256: %.16s…\nSize: %u KB", v->sha256,
              (unsigned)(v->size_bytes / 1024));
     lv_label_set_text(s_det_desc, desc);
     lv_bar_set_value(s_det_progress, 0, LV_ANIM_OFF);
@@ -242,7 +242,7 @@ static void build_home(void)
     lv_obj_set_style_text_font(title, &lv_font_montserrat_18, LV_PART_MAIN);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, BAR_H + 8);
 
-    /* liste scrollable des vessels (flex column, lv_list est déprécié en v9) */
+    /* scrollable vessel list (flex column, lv_list is deprecated in v9) */
     lv_obj_t *list = lv_obj_create(s_scr_home);
     lv_obj_set_size(list, SCR_W - 16, 260);
     lv_obj_align(list, LV_ALIGN_TOP_MID, 0, BAR_H + 36);
@@ -259,7 +259,7 @@ static void build_home(void)
 
     if (count == 0) {
         lv_obj_t *empty = lv_label_create(list);
-        lv_label_set_text(empty, "Aucun vessel — PC Sync\npour synchroniser");
+        lv_label_set_text(empty, "No vessels — PC Sync\nto synchronize");
         lv_obj_set_style_text_color(empty, lv_color_hex(0x888888), LV_PART_MAIN);
         lv_obj_center(empty);
     } else {
@@ -287,7 +287,7 @@ static void build_home(void)
     home_btn(s_scr_home, "USB Diag", 2, home_diag_cb);
 }
 
-/* ---- écran détail + flash ---- */
+/* ---- detail + flash screen ---- */
 
 static void midi_state_cb(drydock_midi_state_t st, const char *detail);
 static void midi_progress_cb(unsigned served, uint32_t addr);
@@ -298,10 +298,10 @@ static void flash_click_cb(lv_event_t *e)
     if (s_flashing) {
         return;
     }
-    lv_label_set_text(s_det_status, "Vérification SHA-256…");
-    /* le manifest contient déjà le préfixe vessels/ (contrat syncer.py) */
+    lv_label_set_text(s_det_status, "Checking SHA-256…");
+    /* the manifest already contains the vessels/ prefix (syncer.py contract) */
     if (drydock_midi_flash(s_current_vessel.file) != ESP_OK) {
-        lv_label_set_text(s_det_status, "Flash indisponible (MIDI ?)");
+        lv_label_set_text(s_det_status, "Flash unavailable (MIDI?)");
         return;
     }
     s_flashing = 1;
@@ -332,7 +332,7 @@ static void build_detail(void)
     lv_obj_align(s_det_desc, LV_ALIGN_TOP_LEFT, 8, BAR_H + 62);
 
     s_det_stock_first = lv_checkbox_create(s_scr_detail);
-    lv_checkbox_set_text(s_det_stock_first, "Flash Stock V15 d'abord");
+    lv_checkbox_set_text(s_det_stock_first, "Flash Stock V15 first");
     lv_obj_align(s_det_stock_first, LV_ALIGN_TOP_LEFT, 8, BAR_H + 170);
     lv_obj_add_state(s_det_stock_first, LV_STATE_CHECKED);
 
@@ -361,7 +361,7 @@ static void build_detail(void)
     lv_obj_center(lbl);
     lv_obj_add_event_cb(s_det_flash_btn, flash_click_cb, LV_EVENT_CLICKED, NULL);
 
-    nav_back(s_scr_detail, "< Accueil");
+    nav_back(s_scr_detail, "< Home");
 }
 
 /* ---- Rescue & Stock ---- */
@@ -372,11 +372,11 @@ static void rescue_check_cb(lv_event_t *e)
     drydock_rescue_info_t info;
     memset(&info, 0, sizeof(info));
     if (drydock_rescue_check(NULL, &info) != ESP_OK) {
-        lv_label_set_text(s_res_status, "Pas de UBOOT1.00 (mode rescue)");
+        lv_label_set_text(s_res_status, "No UBOOT1.00 (rescue mode)");
         return;
     }
     char txt[160];
-    snprintf(txt, sizeof(txt), "%s %s\nFlash: %s · Clé: 0x%04X\nSecteurs à écrire: %u/%u",
+    snprintf(txt, sizeof(txt), "%s %s\nFlash: %s · Key: 0x%04X\nSectors to write: %u/%u",
              info.vendor, info.model, info.flash_ok ? "OK" : "?", info.chip_key,
              (unsigned)info.sectors_diff, (unsigned)info.sectors_total);
     lv_label_set_text(s_res_status, txt);
@@ -389,7 +389,7 @@ static void rescue_bootloader_cb(lv_event_t *e)
         lv_label_set_text(s_res_status, "FM-1 MIDI absent");
         return;
     }
-    lv_label_set_text(s_res_status, "Touche UBOOT envoyée…\nLe FM-1 passe en UBOOT1.00");
+    lv_label_set_text(s_res_status, "UBOOT key sent…\nFM-1 switches to UBOOT1.00");
 }
 
 static void rescue_stock_cb(lv_event_t *e)
@@ -398,9 +398,9 @@ static void rescue_stock_cb(lv_event_t *e)
     if (s_flashing) {
         return;
     }
-    lv_label_set_text(s_res_status, "Retour Stock V15…");
+    lv_label_set_text(s_res_status, "Back to Stock V15…");
     if (drydock_midi_flash(DRY_STOCK_FILE) != ESP_OK) {
-        lv_label_set_text(s_res_status, "Flash indisponible (MIDI ?)");
+        lv_label_set_text(s_res_status, "Flash unavailable (MIDI?)");
         return;
     }
     s_flashing = 1;
@@ -441,7 +441,7 @@ static void build_rescue(void)
         lv_obj_add_event_cb(btn, cbs[i], LV_EVENT_CLICKED, NULL);
     }
 
-    nav_back(s_scr_rescue, "< Accueil");
+    nav_back(s_scr_rescue, "< Home");
 }
 
 /* ---- PC Sync ---- */
@@ -449,7 +449,7 @@ static void build_rescue(void)
 static void sync_done_cb(lv_event_t *e)
 {
     (void)e;
-    ESP_LOGI(TAG, "Done: retour HOST_FLASH");
+    ESP_LOGI(TAG, "Done: back to HOST_FLASH");
     boot_mode_switch(BOOT_MODE_HOST_FLASH);
 }
 
@@ -506,7 +506,7 @@ static void build_diag(void)
     lv_obj_set_width(s_diag_text, SCR_W - 16);
     lv_obj_align(s_diag_text, LV_ALIGN_TOP_LEFT, 8, BAR_H + 40);
 
-    nav_back(s_scr_diag, "< Accueil");
+    nav_back(s_scr_diag, "< Home");
 }
 
 /* ---- callbacks moteurs -> UI ---- */
@@ -520,18 +520,18 @@ static void midi_state_cb(drydock_midi_state_t st, const char *detail)
     if (st == DRYDOCK_MIDI_DONE) {
         s_flashing = 0;
         if (s_det_status) {
-            lv_label_set_text(s_det_status, "Flash terminé ✓");
+            lv_label_set_text(s_det_status, "Flash complete ✓");
         }
         if (s_res_status) {
-            lv_label_set_text(s_res_status, "Stock V15 installé ✓");
+            lv_label_set_text(s_res_status, "Stock V15 installed ✓");
         }
     } else if (st == DRYDOCK_MIDI_ERROR) {
         s_flashing = 0;
         if (s_det_status) {
-            lv_label_set_text(s_det_status, "Erreur: MIDI absent ?");
+            lv_label_set_text(s_det_status, "Error: MIDI absent?");
         }
         if (s_res_status) {
-            lv_label_set_text(s_res_status, "Erreur flash");
+            lv_label_set_text(s_res_status, "Flash error");
         }
     }
     bsp_display_unlock();
@@ -543,7 +543,7 @@ static void midi_progress_cb(unsigned served, uint32_t addr)
     if (!bsp_display_lock(500)) {
         return;
     }
-    /* addr = offset lu dans l'image logique ; on estime le % via la taille du vessel */
+    /* addr = offset read in the logical image; we estimate the % via the vessel size */
     const uint32_t img = s_current_vessel.size_bytes > 20 ? s_current_vessel.size_bytes - 20 : 1;
     const int pct = (int)((uint64_t)addr * 100u / img);
     if (s_det_progress) {
@@ -557,7 +557,7 @@ static void midi_progress_cb(unsigned served, uint32_t addr)
     bsp_display_unlock();
 }
 
-/* ---- tâche de rafraîchissement ---- */
+/* ---- refresh task ---- */
 
 static void refresh_task(void *arg)
 {
@@ -572,9 +572,9 @@ static void refresh_task(void *arg)
             char txt[200];
             const char *usb = drydock_rescue_connected() ? "UBOOT1.00 (MSC)"
                            : drydock_midi_connected() ? "FM-1 (MIDI)"
-                                                       : "aucun FM-1";
+                                                       : "no FM-1";
             snprintf(txt, sizeof(txt),
-                     "Mode: %s\nFM-1: %s\nIdentité: %s\nVBUS: %s\nusb_host_lib: active",
+                     "Mode: %s\nFM-1: %s\nIdentity: %s\nVBUS: %s\nusb_host_lib: active",
                      boot_mode_current() == BOOT_MODE_PC_SYNC ? "PC_SYNC" : "HOST_FLASH",
                      usb, drydock_midi_identity(),
                      drydock_msc_host_connected() ? "on" : "off");
@@ -584,9 +584,9 @@ static void refresh_task(void *arg)
             char txt[160];
             const bool exposed = drydock_msc_host_connected() && drydock_msc_is_exposed();
             snprintf(txt, sizeof(txt),
-                     "Volume DRYDOCK: %s\nPC branché: %s\n\nRetour au dock : bouton Done\nou débranchement",
-                     exposed ? "exposé" : "non exposé",
-                     drydock_msc_host_connected() ? "oui" : "non");
+                     "Volume DRYDOCK: %s\nPC connected: %s\n\nBack to dock: Done button\nor unplug",
+                     exposed ? "exposed" : "not exposed",
+                     drydock_msc_host_connected() ? "yes" : "no");
             lv_label_set_text(s_sync_status, txt);
         }
         bsp_display_unlock();
@@ -600,11 +600,11 @@ esp_err_t drydock_ui_start(void)
     const bool pc_sync = (boot_mode_current() == BOOT_MODE_PC_SYNC);
 
     if (pc_sync) {
-        /* VFS non monté : écran PC Sync seul */
+        /* VFS not mounted: PC Sync screen only */
         build_sync();
         screen_show(s_scr_sync);
     } else {
-        /* branche les callbacks de flash sur l'UI (init idempotente) */
+        /* wires the flash callbacks to the UI (idempotent init) */
         const drydock_midi_callbacks_t midi_cb = {
             .on_state = midi_state_cb,
             .on_progress = midi_progress_cb,

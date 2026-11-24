@@ -48,7 +48,7 @@ def test_download_pkg_ok(hub_client: httpx.Client) -> None:
 
 
 def test_download_pkg_sha_mismatch_raises(sample_catalog: dict) -> None:
-    # le contenu servi ne correspond pas au sha256 du catalogue
+    # the served content does not match the catalog sha256
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/catalog.json":
             return httpx.Response(200, json=sample_catalog)
@@ -88,4 +88,4 @@ def test_rescue_helper_ok(hub_client: httpx.Client, monkeypatch: pytest.MonkeyPa
 
 def test_check_sha256_mismatch() -> None:
     with pytest.raises(ValueError, match="SHA-256"):
-        check_sha256(b"data", "ff" * 32, "fichier.bin")
+        check_sha256(b"data", "ff" * 32, "file.bin")

@@ -1,6 +1,6 @@
-# Firmwares à synchroniser sur la carte Drydock (drydock fetch + drydock sync).
-# Le Stock V15 officiel et le helper Rescue sont synchronisés automatiquement.
-# Sources : firmware_hub (id du catalogue thefirmwarehub.com), github, local.
+# Firmwares to sync onto the Drydock cartridge (drydock fetch + drydock sync).
+# The official Stock V15 and the Rescue helper are synced automatically.
+# Sources : firmware_hub (catalog id from thefirmwarehub.com), github, local.
 
 [[vessel]]
 id = "sloop"
@@ -15,14 +15,14 @@ id = "skiff"
 source = "firmware_hub"
 
 # [[vessel]]
-# id = "mon-fw-github"
-# name = "Mon firmware GitHub"
+# id = "my-fw-github"
+# name = "My GitHub firmware"
 # source = "github"
-# repo = "utilisateur/repo"
-# asset = "monfirmware\\.fwsc"
+# repo = "user/repo"
+# asset = "myfirmware\\.fwsc"
 
 # [[vessel]]
-# id = "ma-sauvegarde"
-# name = "Sauvegarde locale"
+# id = "my-backup"
+# name = "Local backup"
 # source = "local"
-# path = "backups/ma-sauvegarde.fwsc"
+# path = "backups/my-backup.fwsc"

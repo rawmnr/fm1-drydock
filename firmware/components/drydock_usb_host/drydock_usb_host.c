@@ -1,5 +1,5 @@
-/* Cœur USB Host partagé : installation de usb_host_lib, client asynchrone,
- * dispatch des appareils vers les drivers (MIDI / Rescue).
+/* Shared USB Host core: usb_host_lib installation, asynchronous client,
+ * dispatch of devices to the drivers (MIDI / Rescue).
  */
 #include "drydock_usb_host.h"
 
@@ -29,18 +29,18 @@ static void on_new_dev(uint8_t addr)
 {
     usb_device_handle_t dev = NULL;
     if (usb_host_device_open(s_client, addr, &dev) != ESP_OK) {
-        ESP_LOGE(TAG, "device_open(addr %u) a échoué", addr);
+        ESP_LOGE(TAG, "device_open(addr %u) failed", addr);
         return;
     }
     const usb_device_desc_t *ddesc = NULL;
     const usb_config_desc_t *cfg = NULL;
     if (usb_host_get_device_descriptor(dev, &ddesc) != ESP_OK || ddesc == NULL ||
         usb_host_get_active_config_descriptor(dev, &cfg) != ESP_OK || cfg == NULL) {
-        ESP_LOGW(TAG, "descripteurs indisponibles addr %u", addr);
+        ESP_LOGW(TAG, "descriptors unavailable addr %u", addr);
         usb_host_device_close(s_client, dev);
         return;
     }
-    ESP_LOGI(TAG, "appareil addr %u: VID=%04X PID=%04X classe=0x%02X",
+    ESP_LOGI(TAG, "device addr %u: VID=%04X PID=%04X class=0x%02X",
              addr, ddesc->idVendor, ddesc->idProduct, ddesc->bDeviceClass);
 
     for (size_t i = 0; i < s_n_drivers; i++) {
@@ -50,21 +50,21 @@ static void on_new_dev(uint8_t addr)
         const esp_err_t ret = s_drivers[i].attach(s_client, dev, cfg);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "attach %s: %s", s_drivers[i].name, esp_err_to_name(ret));
-            continue; /* ce driver a refusé : essaie le suivant */
+            continue; /* this driver refused: try the next one */
         }
         s_dev = dev;
         s_active = &s_drivers[i];
-        ESP_LOGI(TAG, "driver actif: %s", s_drivers[i].name);
+        ESP_LOGI(TAG, "active driver: %s", s_drivers[i].name);
         return;
     }
-    ESP_LOGW(TAG, "aucun driver pour addr %u, fermeture", addr);
+    ESP_LOGW(TAG, "no driver for addr %u, closing", addr);
     usb_host_device_close(s_client, dev);
 }
 
 static void on_dev_gone(void)
 {
     if (s_active != NULL) {
-        ESP_LOGI(TAG, "appareil parti, detach %s", s_active->name);
+        ESP_LOGI(TAG, "device gone, detach %s", s_active->name);
         s_active->detach();
         s_active = NULL;
     }
@@ -101,10 +101,10 @@ static void client_task(void *arg)
         },
     };
     if (usb_host_client_register(&cfg, &s_client) != ESP_OK) {
-        ESP_LOGE(TAG, "client_register a échoué");
+        ESP_LOGE(TAG, "client_register failed");
         vTaskDelete(NULL);
     }
-    ESP_LOGI(TAG, "client USB Host prêt");
+    ESP_LOGI(TAG, "USB Host client ready");
     while (1) {
         usb_host_client_handle_events(s_client, portMAX_DELAY);
     }
@@ -166,7 +166,7 @@ const usb_intf_desc_t *drydock_usb_find_interface(const usb_config_desc_t *cfg,
         if (c_ok && s_ok && p_ok) {
             return iface;
         }
-        /* saute l'interface et ses endpoints (jusqu'à l'interface suivante) */
+        /* skip the interface and its endpoints (until the next interface) */
         p += iface->bLength;
         while (p + USB_INTF_DESC_SIZE <= end &&
                ((const usb_intf_desc_t *)p)->bDescriptorType != USB_W_VALUE_DT_INTERFACE) {
@@ -212,14 +212,14 @@ const usb_ep_desc_t *drydock_usb_find_ep(const usb_intf_desc_t *iface, int dir_o
     if (iface == NULL) {
         return NULL;
     }
-    /* les endpoints suivent l'interface dans le même buffer : marche depuis
-     * l'interface jusqu'à la suivante (identifiée par son type). */
+    /* the endpoints follow the interface in the same buffer: walk from
+     * the interface to the next one (identified by its type). */
     const uint8_t *p = (const uint8_t *)iface + iface->bLength;
-    const uint8_t *end = p + 256; /* borne large : s'arrête sur l'interface suivante */
+    const uint8_t *end = p + 256; /* large bound: stops at the next interface */
     while (p + USB_EP_DESC_SIZE <= end) {
         const uint8_t type = ((const uint8_t *)p)[1];
         if (type == USB_W_VALUE_DT_INTERFACE) {
-            break; /* interface suivante : on a tout vu */
+            break; /* next interface: we've seen everything */
         }
         if (type == USB_W_VALUE_DT_ENDPOINT) {
             const usb_ep_desc_t *ep = (const usb_ep_desc_t *)p;

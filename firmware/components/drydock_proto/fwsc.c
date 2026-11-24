@@ -1,5 +1,5 @@
-/* Portage C des algorithmes de fm1_rescue.py (GPL-3.0, thefirmwarehub.com).
- * Format .fwsc Felucca : marqueurs d'identité, en-tête ENC, liste de fichiers, flash.bin.
+/* C port of the fm1_rescue.py algorithms (GPL-3.0, thefirmwarehub.com).
+ * Felucca .fwsc format: identity markers, ENC header, file list, flash.bin.
  */
 #include "fwsc.h"
 
@@ -78,14 +78,14 @@ int fwsc_parse(const uint8_t *raw, size_t len, fwsc_info_t *out)
 
     out->loader_present = (memmem_c(raw, len, FW_LOADER_MARK) != NULL);
     if (!out->loader_present) {
-        return -1; /* pas un paquet hub (V15 officiel n'en a pas) */
+        return -1; /* not a hub packet (official V15 doesn't have one) */
     }
 
     if (fwsc_product_of(raw, len, out->product, sizeof(out->product)) != 0) {
         return -1;
     }
 
-    /* image logique : on retire les 20 marqueurs */
+    /* logical image: strip the 20 markers */
     const size_t img_len = len - 20;
     uint8_t *img = calloc(img_len, 1);
     if (img == NULL) {
@@ -98,7 +98,7 @@ int fwsc_parse(const uint8_t *raw, size_t len, fwsc_info_t *out)
     }
     memcpy(img + d, raw + 20u * 0x30u, len - 20u * 0x30u);
 
-    /* en-tête 0x40 chiffré ENC */
+    /* 0x40 encrypted ENC header */
     uint8_t hdr[0x40];
     memcpy(hdr, img, sizeof(hdr));
     fw_enc(hdr, 0, sizeof(hdr), 0xFFFF);
@@ -150,7 +150,7 @@ int fwsc_parse(const uint8_t *raw, size_t len, fwsc_info_t *out)
     out->flash_size = flash_size;
     out->app = img + flash_off + FW_APP_LO;
     out->app_size = FW_APP_HI - FW_APP_LO;
-    out->owned = img; /* transféré à l'appelant (fwsc_free), évite un use-after-free */
+    out->owned = img; /* transferred to the caller (fwsc_free), avoids a use-after-free */
     ret = 0;
 
 done:

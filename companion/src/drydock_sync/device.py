@@ -1,4 +1,4 @@
-"""Détection du volume USB DRYDOCK et des périphériques USB d'intérêt (Windows/Linux/macOS)."""
+"""Detection of the DRYDOCK USB volume and USB devices of interest (Windows/Linux/macOS)."""
 from __future__ import annotations
 
 import getpass
@@ -9,12 +9,12 @@ import subprocess
 from pathlib import Path
 
 VOLUME_NAME = "DRYDOCK"
-ESP32 = ("303A", "1001")  # Waveshare ESP32-S3-Touch-AMOLED-1.8, USB natif
+ESP32 = ("303A", "1001")  # Waveshare ESP32-S3-Touch-AMOLED-1.8, native USB
 FM1 = ("4D4A", "4155")  # M-VAVE FM-1, USB-MIDI
 
 
 def find_drydock_volume() -> Path | None:
-    """Rend le chemin du volume monté nommé DRYDOCK, ou None."""
+    """Return the path of the mounted volume named DRYDOCK, or None."""
     system = platform.system()
     if system == "Windows":
         return _windows_volume()
@@ -45,7 +45,7 @@ def _windows_volume() -> Path | None:
 
 
 def usb_devices() -> list[tuple[str, str]]:
-    """Rend les (VID, PID) en majuscules de chaque périphérique USB connecté."""
+    """Return the uppercased (VID, PID) of each connected USB device."""
     system = platform.system()
     if system == "Windows":
         return _windows_usb()

@@ -1,8 +1,8 @@
-/* FM1-Drydock — firmware de la cartouche (Waveshare ESP32-S3-Touch-AMOLED-1.8).
+/* FM1-Drydock — cartridge firmware (Waveshare ESP32-S3-Touch-AMOLED-1.8).
  *
- * Boot dual-mode : HOST_FLASH (défaut) monte /drydock et pilote le FM-1 en
- * USB Host (MIDI M-UPGRADE / Rescue UBOOT1.00) ; DEVICE_PC_SYNC expose la
- * partition FAT au PC en USB MSC (TinyUSB), sans VFS local.
+ * Dual-mode boot: HOST_FLASH (default) mounts /drydock and drives the FM-1 in
+ * USB Host (MIDI M-UPGRADE / Rescue UBOOT1.00); DEVICE_PC_SYNC exposes the
+ * FAT partition to the PC via USB MSC (TinyUSB), without local VFS.
  */
 #include <stdio.h>
 #include <string.h>
@@ -46,11 +46,11 @@ static const char *TAG = "drydock";
 #define AXP2101_BAT_PERCENT  0xA4
 
 typedef struct {
-    int percent;       /* 0..100 ; -1 si inconnu */
+    int percent;       /* 0..100; -1 if unknown */
     int charging;
     int vbus_present;
-    uint32_t bat_raw;  /* ADC 13 bits brut */
-    int ok;            /* 1 si toutes les lectures télémétrie ont réussi */
+    uint32_t bat_raw;  /* raw 13-bit ADC */
+    int ok;            /* 1 if all telemetry reads succeeded */
 } pmu_telemetry_t;
 
 static i2c_master_dev_handle_t pmu_dev;
@@ -61,7 +61,7 @@ static uint8_t i2c_read8(i2c_master_dev_handle_t dev, uint8_t reg, int *ok)
     if (i2c_master_transmit_receive(dev, &reg, 1, &out, 1, 50) == ESP_OK) {
         return out;
     }
-    *ok = 0; /* lecture ratée : ne pas présenter un 0 comme une valeur réelle */
+    *ok = 0; /* read failed: do not present a 0 as a real value */
     return 0;
 }
 
@@ -79,7 +79,7 @@ static pmu_telemetry_t read_pmu(void)
 {
     pmu_telemetry_t t = { .percent = -1, .charging = 0, .vbus_present = 0, .bat_raw = 0, .ok = 1 };
 
-    /* active l'ADC tension batterie (bit0 de 0x30) si besoin */
+    /* enable the battery voltage ADC (bit0 of 0x30) if needed */
     uint8_t ctrl = i2c_read8(pmu_dev, AXP2101_ADC_CTRL, &t.ok);
     uint8_t enable[2] = { AXP2101_ADC_CTRL, (uint8_t)(ctrl | 0x01) };
     if (i2c_master_transmit(pmu_dev, enable, sizeof(enable), 50) != ESP_OK) {
@@ -89,7 +89,7 @@ static pmu_telemetry_t read_pmu(void)
 
     const uint8_t hi = i2c_read8(pmu_dev, AXP2101_ADC_BATV_H, &t.ok);
     const uint8_t lo = i2c_read8(pmu_dev, AXP2101_ADC_BATV_L, &t.ok);
-    t.bat_raw = ((uint32_t)(hi & 0x1F) << 8) | lo; /* ADC 13 bits ; échelle mV à calibrer (datasheet) */
+    t.bat_raw = ((uint32_t)(hi & 0x1F) << 8) | lo; /* 13-bit ADC; mV scale to calibrate (datasheet) */
 
     const uint8_t s1 = i2c_read8(pmu_dev, AXP2101_STATUS1, &t.ok);
     const uint8_t s2 = i2c_read8(pmu_dev, AXP2101_STATUS2, &t.ok);
@@ -97,7 +97,7 @@ static pmu_telemetry_t read_pmu(void)
     t.charging = ((s2 >> 5) == 0x01) ? 1 : 0;
     t.percent = i2c_read8(pmu_dev, AXP2101_BAT_PERCENT, &t.ok);
 
-    if (!t.ok) { /* n'affiche pas de zéros trompeurs */
+    if (!t.ok) { /* do not show misleading zeros */
         t.percent = -1;
         t.charging = 0;
         t.vbus_present = 0;
@@ -106,7 +106,7 @@ static pmu_telemetry_t read_pmu(void)
     return t;
 }
 
-/* Révision de carte par probe des tactiles (méthode Waveshare) + télémétrie PMU. */
+/* Board revision by probing touch controllers (Waveshare method) + PMU telemetry. */
 static void probe_board(i2c_master_bus_handle_t bus)
 {
     const bool is_v2 = (i2c_master_probe(bus, CST816_ADDR, 50) == ESP_OK);
@@ -120,27 +120,27 @@ static void probe_board(i2c_master_bus_handle_t bus)
     if (pmu_ok == ESP_OK) {
         const pmu_telemetry_t p = read_pmu();
         if (!p.ok) {
-            ESP_LOGW(TAG, "AXP2101: lecture télémétrie ratée");
+            ESP_LOGW(TAG, "AXP2101: telemetry read failed");
         } else {
             ESP_LOGI(TAG, "AXP2101: batt=%d%% chg=%d vbus=%d adc_raw=%u",
                      p.percent, p.charging, p.vbus_present, p.bat_raw);
         }
     } else {
-        ESP_LOGW(TAG, "AXP2101 introuvable sur I2C 0x%02x: %s", AXP2101_ADDR, esp_err_to_name(pmu_ok));
+        ESP_LOGW(TAG, "AXP2101 not found on I2C 0x%02x: %s", AXP2101_ADDR, esp_err_to_name(pmu_ok));
     }
 }
 
-/* Partition FAT interne (via drydock_storage, Wear Levelling). */
+/* Internal FAT partition (via drydock_storage, Wear Levelling). */
 static void probe_sdcard(void)
 {
     const esp_err_t ret = drydock_sd_mount();
     if (ret != ESP_OK) {
-        ESP_LOGI(TAG, "FAT interne: mount %s", esp_err_to_name(ret));
+        ESP_LOGI(TAG, "internal FAT: mount %s", esp_err_to_name(ret));
         return;
     }
     uint64_t free_b = 0;
     if (drydock_fs_free(&free_b) == ESP_OK) {
-        ESP_LOGI(TAG, "FAT interne: monté sur %s, libre %llu Mo",
+        ESP_LOGI(TAG, "internal FAT: mounted at %s, free %llu MB",
                  DRY_MOUNT_POINT, (unsigned long long)(free_b >> 20));
     }
     drydock_manifest_t m;
@@ -148,12 +148,12 @@ static void probe_sdcard(void)
         ESP_LOGI(TAG, "manifest OK: %d vessels, stock=%s sha=%s",
                  m.vessel_count, m.stock_file, m.stock_sha256);
     } else {
-        ESP_LOGW(TAG, "manifest absent/invalide (%s)", DRY_MANIFEST);
+        ESP_LOGW(TAG, "manifest missing/invalid (%s)", DRY_MANIFEST);
     }
-    /* reste monté : le flash lit les paquets depuis /drydock au runtime */
+    /* stays mounted: flashing reads packets from /drydock at runtime */
 }
 
-/* Moteurs USB Host (MIDI M-UPGRADE + Rescue UBOOT1.00) sur le FM-1. */
+/* USB Host engines (MIDI M-UPGRADE + Rescue UBOOT1.00) on the FM-1. */
 static void usb_host_start(void)
 {
     const drydock_usb_driver_t drivers[] = {
@@ -166,7 +166,7 @@ static void usb_host_start(void)
         ESP_LOGE(TAG, "usb_host_start: %s", esp_err_to_name(ret));
         return;
     }
-    ESP_LOGI(TAG, "USB Host actif : FM-1 MIDI (M-UPGRADE) / UBOOT1.00 (rescue)");
+    ESP_LOGI(TAG, "USB Host active: FM-1 MIDI (M-UPGRADE) / UBOOT1.00 (rescue)");
 }
 
 /* ---- commandes console ---- */
@@ -196,12 +196,12 @@ static void console_start(void)
     const esp_console_cmd_t cmds[] = {
         {
             .command = "pc_sync",
-            .help = "basculer en mode DEVICE_PC_SYNC (MSC) puis redémarrer",
+            .help = "switch to DEVICE_PC_SYNC (MSC) mode then reboot",
             .func = &console_cmd_pc_sync,
         },
         {
             .command = "host",
-            .help = "basculer en mode HOST_FLASH puis redémarrer",
+            .help = "switch to HOST_FLASH mode then reboot",
             .func = &console_cmd_host,
         },
     };
@@ -217,7 +217,7 @@ static void console_start(void)
     ESP_ERROR_CHECK(esp_console_new_repl_uart(&hw, &repl_cfg, &repl));
 #endif
     ESP_ERROR_CHECK(esp_console_start_repl(repl));
-    ESP_LOGI(TAG, "console prête : 'pc_sync' | 'host'");
+    ESP_LOGI(TAG, "console ready: 'pc_sync' | 'host'");
 }
 
 void app_main(void)
@@ -235,7 +235,7 @@ void app_main(void)
              (unsigned)flash_size / (1024 * 1024),
              esp_psram_is_initialized() ? "OK" : "NONE");
 
-    /* Probe I2C (révision + PMU) avant que le BSP ne monopolise le bus. */
+    /* Probe I2C (revision + PMU) before the BSP monopolizes the bus. */
     const i2c_master_bus_config_t bus_cfg = {
         .i2c_port = I2C_PORT,
         .sda_io_num = I2C_SDA,
@@ -249,20 +249,20 @@ void app_main(void)
         probe_board(bus);
         i2c_del_master_bus(bus);
     } else {
-        ESP_LOGW(TAG, "i2c master bus indisponible");
+        ESP_LOGW(TAG, "i2c master bus unavailable");
     }
 
     lv_display_t *disp = bsp_display_start();
     if (disp == NULL) {
-        ESP_LOGE(TAG, "bsp_display_start a échoué");
+        ESP_LOGE(TAG, "bsp_display_start failed");
         abort();
     }
-    ESP_LOGI(TAG, "display + touch + LVGL prêts (368x448)");
+    ESP_LOGI(TAG, "display + touch + LVGL ready (368x448)");
     ESP_ERROR_CHECK(bsp_display_brightness_set(70));
 
     if (boot_mode_current() == BOOT_MODE_PC_SYNC) {
-        /* Exclusion mutuelle : PAS de VFS local, le bloc spiflash part au PC. */
-        ESP_LOGI(TAG, "DEVICE_PC_SYNC : pas de montage VFS, exposition MSC");
+        /* Mutual exclusion: no local VFS, the spiflash block goes to the PC. */
+        ESP_LOGI(TAG, "DEVICE_PC_SYNC: no VFS mount, exposing MSC");
         wl_handle_t wl = WL_INVALID_HANDLE;
         ESP_ERROR_CHECK(drydock_fs_wl_init(&wl));
         ESP_ERROR_CHECK(drydock_msc_start(wl));
@@ -275,16 +275,16 @@ void app_main(void)
         int gone = 0;
         while (1) {
             vTaskDelay(pdMS_TO_TICKS(500));
-            /* l'hôte est parti : débranchement (tud_connected) ou éjection SCSI
-             * (le montage MSC repasse côté app, plus exposé au PC). */
+            /* host is gone: unplug (tud_connected) or SCSI eject
+             * (the MSC mount goes back to the app side, no longer exposed to the PC). */
             const bool host_here = drydock_msc_host_connected() && drydock_msc_is_exposed();
             if (host_here) {
                 gone = 0;
                 continue;
             }
-            /* retour au dock même si la batterie maintient l'alimentation (flag RTC conservé) */
-            if (++gone >= 8) { /* ~4 s sans hôte */
-                ESP_LOGW(TAG, "hôte USB parti (débranchement/éjection): retour HOST_FLASH");
+            /* return to dock even if the battery keeps supplying power (RTC flag preserved) */
+            if (++gone >= 8) { /* ~4 s without host */
+                ESP_LOGW(TAG, "USB host gone (unplug/eject): back to HOST_FLASH");
                 boot_mode_switch(BOOT_MODE_HOST_FLASH);
             }
         }
@@ -293,7 +293,7 @@ void app_main(void)
     probe_sdcard();
     console_start();
 
-    /* Moteurs USB Host : MIDI M-UPGRADE (flash) + Rescue UBOOT1.00 (SCSI). */
+    /* USB Host engines: MIDI M-UPGRADE (flash) + Rescue UBOOT1.00 (SCSI). */
     ESP_ERROR_CHECK(drydock_midi_init(NULL));
     ESP_ERROR_CHECK(drydock_rescue_init(NULL));
     usb_host_start();

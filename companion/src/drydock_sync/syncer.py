@@ -1,4 +1,4 @@
-"""Orchestration fetch/sync : cache local, diff SHA-256, layout SD, manifest atomique."""
+"""fetch/sync orchestration: local cache, SHA-256 diff, SD layout, atomic manifest."""
 from __future__ import annotations
 
 import hashlib
@@ -19,7 +19,7 @@ RESCUE_REL = "rescue/jl_flash_helper.bin"
 
 @dataclass
 class ResolvedEntry:
-    """Un fichier prêt à copier sur la SD, et sa déclaration manifest."""
+    """A file ready to copy to the SD, and its manifest declaration."""
 
     id: str
     name: str
@@ -68,9 +68,9 @@ def _atomic_write(path: Path, data: bytes) -> None:
 
 
 class Cache:
-    """Cache de téléchargement, un fichier par entrée avec sidecar .sha256.
+    """Download cache, one file per entry with a .sha256 sidecar.
 
-    Le sidecar sert aux sources sans hash autoritatif (github, local).
+    The sidecar serves sources without an authoritative hash (github, local).
     """
 
     def __init__(self, root: Path):
@@ -84,7 +84,7 @@ class Cache:
         return p.is_file() and sha256_file(p) == expected_sha
 
     def valid_with_sidecar(self, rel_path: str) -> str | None:
-        """Rend le hash d'un fichier en cache si son sidecar correspond, sinon None."""
+        """Return the hash of a cached file if its sidecar matches, otherwise None."""
         p = self.path_for(rel_path)
         side = self.path_for(rel_path + ".sha256")
         if not p.is_file() or not side.is_file():
@@ -93,7 +93,7 @@ class Cache:
         return want if sha256_file(p) == want else None
 
     def ensure(self, rel_path: str, expected_sha: str | None, producer: Callable[[], bytes]) -> bytes:
-        """Rend les octets du cache, sinon produit, vérifie et écrit."""
+        """Return the bytes from cache, otherwise produce, verify and write."""
         if expected_sha is not None and self.valid(rel_path, expected_sha):
             return self.path_for(rel_path).read_bytes()
         if expected_sha is None:
@@ -102,7 +102,7 @@ class Cache:
                 return self.path_for(rel_path).read_bytes()
         data = producer()
         if expected_sha is not None and sha256_bytes(data) != expected_sha:
-            raise ValueError(f"{rel_path}: SHA-256 du téléchargement != attendu {expected_sha}")
+            raise ValueError(f"{rel_path}: SHA-256 of download != expected {expected_sha}")
         self.write(rel_path, data)
         return data
 
@@ -143,8 +143,8 @@ class Resolver:
         release = self.github.latest_release(v.repo)
         asset = self.github.find_asset(release, v.asset)
         rel = f"vessels/{v.id}.fwsc"
-        # toujours re-télécharger : aucun hash autoritatif ne permet de réutiliser un cache
-        # sans risquer de servir l'asset d'une release précédente
+        # always re-download: no authoritative hash allows reusing a cache
+        # without risking serving the asset of a previous release
         data = self.github.download_asset(asset)
         self.cache.write(rel, data)
         return ResolvedEntry(
@@ -179,7 +179,7 @@ class Resolver:
 
 
 def resolve_all(resolver: Resolver, cfg: VesselsConfig) -> list[ResolvedEntry]:
-    """Stock V15 + helper rescue + les vessels de la config, dans cet ordre."""
+    """Stock V15 + rescue helper + the config vessels, in this order."""
     entries = [resolver.resolve_stock(), resolver.resolve_rescue()]
     entries += [resolver.resolve_vessel(v) for v in cfg.vessel]
     return entries
@@ -198,13 +198,13 @@ class SyncResult:
 
 
 def sync(target: Path, entries: list[ResolvedEntry]) -> SyncResult:
-    """Écrit la layout Drydock à la racine du volume <target> (diff SHA-256) et manifest.json.
+    """Write the Drydock layout at the root of the <target> volume (SHA-256 diff) and manifest.json.
 
-    La partition FAT interne est montée par l'ESP32 à `/drydock` ; sa racine
-    EST la racine de la layout (plus de sous-dossier `drydock/` sur le volume).
+    The internal FAT partition is mounted by the ESP32 at `/drydock`; its root
+    IS the root of the layout (no extra `drydock/` subfolder on the volume).
 
-    Le manifest n'est écrit, par replacement atomique, que si toutes les copies
-    ont réussi. Le fichier destination s'appelle .tmp pendant l'écriture.
+    The manifest is only written, by atomic replacement, if all copies
+    succeeded. The destination file is called .tmp while being written.
     """
     base = target
     copied: list[str] = []
@@ -224,7 +224,7 @@ def sync(target: Path, entries: list[ResolvedEntry]) -> SyncResult:
         stock = next(e for e in entries if e.rel_path == STOCK_REL)
         rescue = next(e for e in entries if e.rel_path == RESCUE_REL)
     except StopIteration:
-        errors.append("entrées stock_v15 ou rescue_helper manquantes")
+        errors.append("stock_v15 or rescue_helper entries missing")
     if not errors:
         manifest = Manifest(
             generated_at=datetime.now(UTC),
@@ -243,7 +243,7 @@ class VerifyResult:
 
 
 def verify(target: Path) -> VerifyResult:
-    """Vérifie chaque fichier listé dans manifest.json (existence + SHA-256)."""
+    """Verify each file listed in manifest.json (existence + SHA-256)."""
     base = target
     man_file = base / "manifest.json"
     if not man_file.is_file():

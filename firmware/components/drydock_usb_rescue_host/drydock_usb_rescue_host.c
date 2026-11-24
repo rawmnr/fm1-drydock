@@ -1,5 +1,5 @@
-/* Moteur USB Host rescue : Bulk-Only Transport + protocole bootloader v2
- * (fm1_rescue.py). Portage C, DRY zone only [APP_LO, APP_HI).
+/* USB Host rescue engine: Bulk-Only Transport + bootloader v2 protocol
+ * (fm1_rescue.py). C port, DRY zone only [APP_LO, APP_HI).
  */
 #include "drydock_usb_rescue_host.h"
 
@@ -30,8 +30,8 @@
 #define FLASH_IDS 2u
 #define APP_LO 0x4000u
 #define APP_HI 0x93000u
-#define SEC 0x1000u /* secteur 4 Ko */
-#define CH 256u     /* tranche d'écriture */
+#define SEC 0x1000u /* 4 KB sector */
+#define CH 256u     /* write chunk */
 #define HEAD_LEN 0x400u
 
 static const uint8_t s_flash_ids[FLASH_IDS][2] = { { 0x85, 0x60 }, { 0xB3, 0x60 } };
@@ -54,7 +54,7 @@ static SemaphoreHandle_t s_xfer_done;
 static usb_transfer_t *s_xfer;
 static volatile int s_xfer_status;
 
-/* ---- transport BOT ---- */
+/* ---- BOT transport ---- */
 
 static void xfer_cb(usb_transfer_t *xfer)
 {
@@ -76,7 +76,7 @@ static esp_err_t bot_submit(const uint8_t *cbw, size_t cbw_len, uint8_t *data, s
     if (!s_attached || s_xfer == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
-    /* CBW (31 octets) sur OUT */
+    /* CBW (31 bytes) on OUT */
     s_xfer->device_handle = s_dev.dev;
     s_xfer->bEndpointAddress = s_dev.ep_out;
     s_xfer->num_bytes = (int)cbw_len;
@@ -85,7 +85,7 @@ static esp_err_t bot_submit(const uint8_t *cbw, size_t cbw_len, uint8_t *data, s
     ESP_RETURN_ON_ERROR(usb_host_transfer_submit(s_xfer), TAG, "CBW submit");
     ESP_RETURN_ON_ERROR(xfer_wait(2000), TAG, "CBW xfer");
 
-    /* données (si phase data) */
+    /* data (if data phase) */
     if (data != NULL && data_len > 0) {
         s_xfer->device_handle = s_dev.dev;
         s_xfer->bEndpointAddress = dir_in ? s_dev.ep_in : s_dev.ep_out;
@@ -101,7 +101,7 @@ static esp_err_t bot_submit(const uint8_t *cbw, size_t cbw_len, uint8_t *data, s
         }
     }
 
-    /* CSW (13 octets) sur IN */
+    /* CSW (13 bytes) on IN */
     s_xfer->device_handle = s_dev.dev;
     s_xfer->bEndpointAddress = s_dev.ep_in;
     s_xfer->num_bytes = 13;
@@ -117,8 +117,8 @@ static esp_err_t bot_submit(const uint8_t *cbw, size_t cbw_len, uint8_t *data, s
     return ESP_OK;
 }
 
-/* Exécute un CDB SCSI : construit le CBW, gère la phase data, lit le CSW.
- * Renvoie 0 si CSW status OK. */
+/* Runs a SCSI CDB: builds the CBW, handles the data phase, reads the CSW.
+ * Returns 0 if CSW status OK. */
 static int scsi_run(const uint8_t cdb[16], uint8_t *data, size_t data_len, int dir_in,
                     int timeout_ms)
 {
@@ -146,7 +146,7 @@ static int scsi_run(const uint8_t cdb[16], uint8_t *data, size_t data_len, int d
         return -1;
     }
     if (csw_len != 13 || csw[0] != 0x55 || csw[1] != 0x53 || csw[2] != 0x42 || csw[3] != 0x53) {
-        ESP_LOGE(TAG, "CSW invalide");
+        ESP_LOGE(TAG, "invalid CSW");
         return -1;
     }
     if (csw[12] != 0) {
@@ -156,7 +156,7 @@ static int scsi_run(const uint8_t cdb[16], uint8_t *data, size_t data_len, int d
     return 0;
 }
 
-/* ---- protocole bootloader v2 (fm1_rescue.py Boot) ---- */
+/* ---- bootloader v2 protocol (fm1_rescue.py Boot) ---- */
 
 static int bl_mem_write(uint32_t addr, const uint8_t *data, size_t len)
 {
@@ -265,7 +265,7 @@ static int bl_run_app(void)
     return scsi_run(cdb, resp, 16, 1, 3000);
 }
 
-/* Clé chip : scanne la tête flash (JLFS), dérive la clé du blob isd_config.ini. */
+/* Chip key: scans the flash head (JLFS), derives the key from the isd_config.ini blob. */
 static int read_chip_key(uint16_t *out_key)
 {
     uint8_t head[HEAD_LEN];
@@ -278,7 +278,7 @@ static int read_chip_key(uint16_t *out_key)
         fw_enc(e, 0, 32, 0xFFFF);
         const uint16_t crc = (uint16_t)(e[0] | (e[1] << 8));
         if (fw_crc16(e + 2, 30, 0) != crc) {
-            set_error("tête non-JieLi (CRC)");
+            set_error("non-JieLi head (CRC)");
             return -1;
         }
         if (memcmp(e + 16, "isd_config.ini\0", 15) == 0) {
@@ -289,7 +289,7 @@ static int read_chip_key(uint16_t *out_key)
                 return -1;
             }
             if (fw_chip_key(blob, out_key) != 0) {
-                set_error("blob clé chip endommagé");
+                set_error("chip key blob corrupted");
                 return -1;
             }
             return 0;
@@ -298,7 +298,7 @@ static int read_chip_key(uint16_t *out_key)
             break;
         }
     }
-    set_error("pas de clé chip dans la tête flash");
+    set_error("no chip key in the flash head");
     return -1;
 }
 
@@ -308,7 +308,7 @@ static void set_error(const char *msg)
     ESP_LOGE(TAG, "%s", msg);
 }
 
-/* ---- driver USB Host ---- */
+/* ---- USB Host driver ---- */
 
 static int match_mass_storage(const usb_device_desc_t *dev, const usb_config_desc_t *cfg)
 {
@@ -357,15 +357,15 @@ const drydock_usb_driver_t *drydock_rescue_driver(void)
     return &s_driver;
 }
 
-/* Charge le helper loader en RAM (0x01C02000) s'il n'y tourne pas déjà.
- * Séquences bit-à-bit de fm1_rescue.py : lecture mémoire = MengLi(chiffré) si
- * le ROM répond, clair si le helper tourne déjà. Le helper est transmis par
- * blocs de 512 octets. */
+/* Loads the loader helper into RAM (0x01C02000) if it isn't already running.
+ * Bit-by-bit sequences from fm1_rescue.py: memory read = MengLi (encrypted) if
+ * the ROM responds, plaintext if the helper already runs. The helper is
+ * transmitted in 512-byte blocks. */
 static int helper_ensure_loaded(void)
 {
     FILE *f = fopen(JL_LOADER_PATH, "rb");
     if (f == NULL) {
-        set_error("helper loader absent de /drydock/rescue/");
+        set_error("loader helper missing from /drydock/rescue/");
         return -1;
     }
     fseek(f, 0, SEEK_END);
@@ -373,7 +373,7 @@ static int helper_ensure_loaded(void)
     fseek(f, 0, SEEK_SET);
     if (flen <= 0 || flen > 65536) {
         fclose(f);
-        set_error("helper loader invalide");
+        set_error("invalid loader helper");
         return -1;
     }
     uint8_t *jl = malloc((size_t)flen);
@@ -384,14 +384,14 @@ static int helper_ensure_loaded(void)
     }
     fclose(f);
 
-    /* déjà chargé ? le ROM répondrait chiffré MengLi, le helper en clair */
+    /* already loaded? the ROM would answer MengLi-encrypted, the helper plaintext */
     uint8_t probe[16];
     if (bl_mem_read(JL_ADDR, probe, 16) == 0) {
         uint8_t enc[16];
         memcpy(enc, jl, 16);
         fw_mengli(enc, 16);
         if (memcmp(probe, enc, 16) == 0) {
-            ESP_LOGI(TAG, "helper déjà chargé");
+            ESP_LOGI(TAG, "helper already loaded");
             free(jl);
             return 0;
         }
@@ -400,22 +400,22 @@ static int helper_ensure_loaded(void)
     for (size_t off = 0; off < (size_t)flen; off += 512) {
         const size_t chunk = (size_t)flen - off < 512 ? (size_t)flen - off : 512;
         if (bl_mem_write(JL_ADDR + (uint32_t)off, jl + off, chunk) != 0) {
-            set_error("écriture helper RAM échouée");
+            set_error("helper RAM write failed");
             free(jl);
             return -1;
         }
     }
     if (bl_mem_jump(JL_ADDR, JL_ARG) != 0) {
-        set_error("jump helper échoué");
+        set_error("helper jump failed");
         free(jl);
         return -1;
     }
-    ESP_LOGI(TAG, "helper loader chargé (%ld octets)", flen);
+    ESP_LOGI(TAG, "loader helper loaded (%ld bytes)", flen);
     free(jl);
     return 0;
 }
 
-/* ---- INQUIRY + vérification d'identité ---- */
+/* ---- INQUIRY + identity verification ---- */
 
 static int inquiry(char *vendor, size_t v_sz, char *model, size_t m_sz)
 {
@@ -473,7 +473,7 @@ static esp_err_t load_app_area(const char *fwsc_path, uint8_t **app_out, uint32_
     snprintf(path, sizeof(path), "/drydock/%s", fwsc_path);
     FILE *f = fopen(path, "rb");
     if (f == NULL) {
-        set_error("paquet introuvable sur /drydock");
+        set_error("packet not found on /drydock");
         return ESP_ERR_NOT_FOUND;
     }
     fseek(f, 0, SEEK_END);
@@ -496,7 +496,7 @@ static esp_err_t load_app_area(const char *fwsc_path, uint8_t **app_out, uint32_
     fwsc_info_t info;
     if (fwsc_parse(raw, (size_t)flen, &info) != 0) {
         free(raw);
-        set_error("paquet invalide (pas Felucca ?)");
+        set_error("invalid packet (not Felucca?)");
         return ESP_ERR_INVALID_ARG;
     }
     snprintf(product, product_sz, "%s", info.product);
@@ -524,12 +524,12 @@ esp_err_t drydock_rescue_check(const char *fwsc_path, drydock_rescue_info_t *out
         return ESP_ERR_INVALID_RESPONSE;
     }
     if (strcmp(out->model, "UBOOT1.00") != 0 || strcmp(out->vendor, "WL82") != 0) {
-        set_error("pas un UBOOT1.00 (WL82)");
+        set_error("not an UBOOT1.00 (WL82)");
         return ESP_ERR_NOT_SUPPORTED;
     }
     out->found = 1;
 
-    /* le helper accélère les lectures flash ; ne jamais le réécrire s'il tourne */
+    /* the helper speeds up flash reads; never rewrite it if it runs */
     if (helper_ensure_loaded() == 0) {
         out->helper_running = 1;
     }
@@ -556,7 +556,7 @@ esp_err_t drydock_rescue_check(const char *fwsc_path, drydock_rescue_info_t *out
         uint32_t app_len = 0;
         char product[FW_MAX_PRODUCT + 1];
         if (load_app_area(fwsc_path, &app, &app_len, product, sizeof(product)) == ESP_OK) {
-            /* le paquet est-il pour cette clé ? SFC + CRC du premier bloc */
+            /* is the packet for this key? SFC + CRC of the first block */
             const size_t blk = app_len > 32 ? 32 : app_len;
             uint8_t hdr[32];
             memcpy(hdr, app, blk);
@@ -583,7 +583,7 @@ esp_err_t drydock_rescue_flash(const char *fwsc_path, int confirm)
         return ESP_ERR_INVALID_STATE;
     }
     if (!confirm) {
-        set_error("confirmation requise");
+        set_error("confirmation required");
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -593,7 +593,7 @@ esp_err_t drydock_rescue_flash(const char *fwsc_path, int confirm)
     ESP_RETURN_ON_ERROR(load_app_area(fwsc_path, &app, &app_len, product, sizeof(product)),
                         TAG, "load app area");
 
-    /* helper loader en RAM (jamais réécrit s'il tourne déjà) */
+    /* loader helper in RAM (never rewritten if it already runs) */
     if (helper_ensure_loaded() != 0) {
         free(app);
         return ESP_ERR_INVALID_STATE;
@@ -605,18 +605,18 @@ esp_err_t drydock_rescue_flash(const char *fwsc_path, int confirm)
         return ESP_ERR_INVALID_STATE;
     }
 
-    /* le paquet doit se décrypter avec la clé du FM-1 */
+    /* the packet must decrypt with the FM-1 key */
     uint8_t blk0[32];
     memcpy(blk0, app, 32);
     fw_sfc(blk0, 32, key);
     if (fw_crc16(blk0 + 2, 30, 0) != (uint16_t)(blk0[0] | (blk0[1] << 8))) {
-        set_error("paquet pas pour cette clé chip");
+        set_error("packet not for this chip key");
         free(app);
         return ESP_ERR_INVALID_ARG;
     }
-    ESP_LOGI(TAG, "clé chip 0x%04X, paquet %s validé", key, product);
+    ESP_LOGI(TAG, "chip key 0x%04X, packet %s validated", key, product);
 
-    /* secteurs à écrire : uniquement ceux qui diffèrent */
+    /* sectors to write: only those that differ */
     uint8_t cur[SEC];
     uint8_t want[SEC];
     uint32_t n_todo = 0;
@@ -627,12 +627,12 @@ esp_err_t drydock_rescue_flash(const char *fwsc_path, int confirm)
         }
     }
     if (n_todo == 0) {
-        ESP_LOGI(TAG, "rien à écrire : le FM-1 a déjà ce firmware");
+        ESP_LOGI(TAG, "nothing to write: the FM-1 already has this firmware");
         free(app);
         bl_run_app();
         return ESP_OK;
     }
-    ESP_LOGI(TAG, "%u secteurs à écrire", (unsigned)n_todo);
+    ESP_LOGI(TAG, "%u sectors to write", (unsigned)n_todo);
 
     uint32_t done = 0;
     for (uint32_t s = APP_LO; s < APP_HI; s += SEC) {
@@ -659,7 +659,7 @@ esp_err_t drydock_rescue_flash(const char *fwsc_path, int confirm)
             }
         }
         if (!ok) {
-            set_error("secteur non relu conforme (reprise possible)");
+            set_error("sector not re-read as expected (retry possible)");
             free(app);
             return ESP_FAIL;
         }
@@ -669,7 +669,7 @@ esp_err_t drydock_rescue_flash(const char *fwsc_path, int confirm)
         }
     }
 
-    /* vérification finale complète */
+    /* full final verification */
     int bad = 0;
     for (uint32_t s = APP_LO; s < APP_HI && !bad; s += SEC) {
         if (bl_flash_read(s, cur, SEC) == 0 &&
@@ -679,10 +679,10 @@ esp_err_t drydock_rescue_flash(const char *fwsc_path, int confirm)
     }
     free(app);
     if (bad) {
-        set_error("vérification finale échouée");
+        set_error("final verification failed");
         return ESP_FAIL;
     }
     bl_run_app();
-    ESP_LOGI(TAG, "flash terminé, %s lancé", product);
+    ESP_LOGI(TAG, "flash complete, %s launched", product);
     return ESP_OK;
 }

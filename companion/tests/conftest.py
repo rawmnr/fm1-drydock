@@ -7,7 +7,7 @@ import pytest
 
 
 def _firmware(id_: str, name: str, version: str, kind, what: str) -> dict:
-    payload = id_.encode()  # le paquet servi par le mock est l'id encodé
+    payload = id_.encode()  # the package served by the mock is the encoded id
     return {
         "id": id_,
         "name": name,
@@ -39,7 +39,7 @@ def sample_catalog() -> dict:
 
 @pytest.fixture
 def hub_client(sample_catalog: dict) -> httpx.Client:
-    """Client du hub mocké : catalogue et paquets cohérents (contenu = id encodé)."""
+    """Mocked hub client: consistent catalog and packages (content = encoded id)."""
     payloads = {f"/{f['pkg']}": f["id"].encode() for f in sample_catalog["firmwares"]}
 
     def handler(request: httpx.Request) -> httpx.Response:

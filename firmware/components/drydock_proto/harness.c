@@ -1,16 +1,16 @@
-/* harness.c — exécutable de test hôte pour les primitives de protocole C
- * (jielib + upgrade). Chaque mode lit des octets sur stdin et écrit le
- * résultat sur stdout, pour comparaison bit-à-bit avec la référence Python.
+/* harness.c — host test executable for the C protocol primitives
+ * (jielib + upgrade). Each mode reads bytes from stdin and writes the
+ * result to stdout, for bit-to-bit comparison with the Python reference.
  *
  * Usage: harness <mode> [args...]
- *   pack7          stdin: octets bruts -> stdout: paquets 7 bits
- *   unpack7        stdin: paquets 7 bits -> stdout: octets bruts
- *   response ADDR FL LEN   stdin: LEN octets de données -> stdout: SysEx F0..F7
+ *   pack7          stdin: raw bytes -> stdout: 7-bit packets
+ *   unpack7        stdin: 7-bit packets -> stdout: raw bytes
+ *   response ADDR FL LEN   stdin: LEN data bytes -> stdout: SysEx F0..F7
  *   req-parse      stdin: SysEx F0..F7 -> stdout: "OK addr=.. len=.. fl=.." | "BAD"
- *   id-parse       stdin: SysEx F0..F7 -> stdout: texte | "BAD"
- *   mengli         stdin: octets bruts -> stdout: chiffrés
- *   cdb OP SUB N   stdin: N octets args -> stdout: 16 octets CDB
- *   chipkey        stdin: 34 octets blob -> stdout: "KEY=0x.." | "BAD"
+ *   id-parse       stdin: SysEx F0..F7 -> stdout: text | "BAD"
+ *   mengli         stdin: raw bytes -> stdout: encrypted
+ *   cdb OP SUB N   stdin: N args bytes -> stdout: 16 CDB bytes
+ *   chipkey        stdin: 34-byte blob -> stdout: "KEY=0x.." | "BAD"
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -66,8 +66,8 @@ static unsigned long arg_ul(const char *s)
 int main(int argc, char **argv)
 {
 #ifdef _WIN32
-    /* mode binaire en entrée ET sortie : le protocole manipule des octets bruts
-     * (sinon un 0x1A entrant est lu comme EOF, et un 0x0A sortant devient CRLF) */
+    /* binary mode on input AND output: the protocol handles raw bytes
+     * (otherwise an incoming 0x1A is read as EOF, and an outgoing 0x0A becomes CRLF) */
     _setmode(_fileno(stdin), _O_BINARY);
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
@@ -160,7 +160,7 @@ int main(int argc, char **argv)
 
     if (strcmp(mode, "chipkey") == 0) {
         if (read_all(&in, &in_len) != 0 || in_len != 34) {
-            fprintf(stderr, "chipkey: attendu 34 octets\n");
+            fprintf(stderr, "chipkey: expected 34 bytes\n");
             return 1;
         }
         uint16_t key = 0;
@@ -187,6 +187,6 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    fprintf(stderr, "mode inconnu: %s\n", mode);
+    fprintf(stderr, "unknown mode: %s\n", mode);
     return 2;
 }

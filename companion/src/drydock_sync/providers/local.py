@@ -1,4 +1,4 @@
-"""Sources .fwsc locales (firmwares hors hub)."""
+"""Local .fwsc sources (firmwares outside the hub)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,5 +6,5 @@ from pathlib import Path
 
 def load(path: Path) -> bytes:
     if not path.is_file():
-        raise FileNotFoundError(f"{path}: fichier local absent")
+        raise FileNotFoundError(f"{path}: local file missing")
     return path.read_bytes()

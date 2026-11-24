@@ -1,10 +1,10 @@
-"""Client du catalogue thefirmwarehub.com.
+"""Client for the thefirmwarehub.com catalog.
 
-Sources mesurées le 2026-11-23 :
-- catalogue : GET /catalog.json, licence CC-BY-4.0, lire au plus une fois par jour.
-- Stock V15 : miroir hub de sdk/firmware/FM-1_015.fwsc (m-vave/fm1_open, Apache-2.0).
-- helper rescue : wl82loader.bin de jl-uboot-tool (MIT, kagaimiq), commit épinglé
-  (mêmes constantes que fm1_rescue.py).
+Sources measured on 2026-11-23:
+- catalog: GET /catalog.json, CC-BY-4.0 license, read at most once a day.
+- Stock V15: hub mirror of sdk/firmware/FM-1_015.fwsc (m-vave/fm1_open, Apache-2.0).
+- rescue helper: wl82loader.bin from jl-uboot-tool (MIT, kagaimiq), pinned commit
+  (same constants as fm1_rescue.py).
 """
 from __future__ import annotations
 
@@ -28,11 +28,11 @@ RESCUE_SHA256 = "d41da6126760c9d66660bcc0cac8d27d221806c5e369a8036921efe68dca537
 def check_sha256(data: bytes, expected: str, name: str) -> None:
     got = hashlib.sha256(data).hexdigest()
     if got != expected:
-        raise ValueError(f"{name}: SHA-256 {got} != attendu {expected}")
+        raise ValueError(f"{name}: SHA-256 {got} != expected {expected}")
 
 
 class HubFirmware(BaseModel):
-    """Une entrée du catalogue. Les champs non utilisés sont ignorés."""
+    """A catalog entry. Unused fields are ignored."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -63,7 +63,7 @@ class HubCatalog(BaseModel):
 
 
 class FirmwareHub:
-    """Client http du hub. Un catalogue par instance (mémorisé)."""
+    """HTTP client for the hub. One catalog per instance (memoized)."""
 
     def __init__(self, client: httpx.Client | None = None):
         self._client = client or httpx.Client(base_url=HUB, timeout=60, follow_redirects=True)
@@ -91,7 +91,7 @@ class FirmwareHub:
             if fw.id == fw_id:
                 return fw
         ids = ", ".join(sorted(fw.id for fw in cat.firmwares))
-        raise KeyError(f"id '{fw_id}' absent du catalogue. Ids connus : {ids}")
+        raise KeyError(f"id '{fw_id}' missing from catalog. Known ids: {ids}")
 
     def download_pkg(self, fw: HubFirmware) -> bytes:
         url = fw.pkg if fw.pkg.startswith("http") else f"{HUB}/{fw.pkg}"

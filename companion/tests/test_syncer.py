@@ -43,7 +43,7 @@ def _validate_against_schema(manifest_path: Path) -> None:
 def test_sync_creates_layout_and_valid_manifest(tmp_path: Path) -> None:
     result = sync(tmp_path, _entries())
     assert result.ok
-    base = tmp_path  # racine du volume == racine de la layout Drydock
+    base = tmp_path  # volume root == Drydock layout root
     assert (base / "stock/fm1_v15_official.fwsc").read_bytes() == V15_DATA
     assert (base / "rescue/jl_flash_helper.bin").read_bytes() == HELPER_DATA
     assert (base / "vessels/sloop.fwsc").read_bytes() == SLOOP_DATA

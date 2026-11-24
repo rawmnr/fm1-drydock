@@ -1,54 +1,54 @@
-# Carte Waveshare ESP32-S3-Touch-AMOLED-1.8
+# Waveshare ESP32-S3-Touch-AMOLED-1.8 board
 
-Statut : probe PC du 2026-11-23, wiki Waveshare, SPEC. Les points marqués [À vérifier] sont à confirmer sur la carte réelle en Phase 0.
+Status : PC probe of 2026-11-23, Waveshare wiki, SPEC. The points marked [To verify] are to be confirmed on the real board in Phase 0.
 
-## Identité mesurée sur USB
+## Identity measured over USB
 
-| Périphérique | Instance | Interfaces vues |
+| Device | Instance | Interfaces seen |
 |---|---|---|
-| ESP32-S3 (carte) | `USB\VID_303A&PID_1001` | MI_00 : CDC série (COM6) ; MI_02 : USB JTAG/serial debug unit |
-| FM-1 | `USB\VID_4D4A&PID_4155` | MI_00 : classe MEDIA (USB-MIDI), voir `protocol-sysex.md` |
+| ESP32-S3 (board) | `USB\VID_303A&PID_1001` | MI_00 : CDC serial (COM6) ; MI_02 : USB JTAG/serial debug unit |
+| FM-1 | `USB\VID_4D4A&PID_4155` | MI_00 : MEDIA class (USB-MIDI), see `protocol-sysex.md` |
 
-Le port USB-C de la carte est l'USB natif du S3 (GPIO19 D-, GPIO20 D+). Pas de pont UART externe : le même connecteur sert au téléchargement (bootloader ROM) et à la console série/JTAG.
+The board USB-C port is the native USB of the S3 (GPIO19 D-, GPIO20 D+). No external UART bridge : the same connector serves for downloading (ROM bootloader) and the serial/JTAG console.
 
-## Révisions de l'écran AMOLED 368×448
+## AMOLED 368×448 screen revisions
 
-| Révision | Contrôleur affichage | Tactile |
+| Revision | Display controller | Touchscreen |
 |---|---|---|
 | V1 | SH8601 (QSPI) | FT3168 (I2C) |
 | V2 | CO5300 | CST816/CST820 |
 
-Le vendeur a annoncé l'arrêt de la V1 et le basculement vers la V2 le 2026-05-30. Le BSP Waveshare officiel pilote la V2 (CO5300 + CST816). Mesuré dans l'exemple officiel `13_display_colorbar` (IDF) :
+The vendor announced the end of the V1 and the switch to the V2 on 2026-05-30. The official Waveshare BSP drives the V2 (CO5300 + CST816). Measured in the official example `13_display_colorbar` (IDF) :
 
-- **Détection de révision** : probe I2C de l'adresse du tactile CST816 (`0x15`) sur `SDA=15` / `SCL=14`. Adresse répond → V2 ; sinon V1/original. L'écran est piloté en CO5300 dans les deux cas, avec un décalage X de `0x10` si V2.
-- **Afficheur V2 (CO5300, QSPI)** : PCLK=11, D0=4, D1=5, D2=6, D3=7, CS=12, RGB565, QSPI.
-- **Composant BSP** : `waveshare/esp32_s3_touch_amoled_1_8` (registre, v2.0.3), pour `idf: ">=5.5,<6.1"`. Fournit display + tactile + luminosité + microSD (`bsp_display_start`, `bsp_display_brightness_set`, `bsp_sdcard_mount`).
-- **Révision mesurée sur la carte (smoke 1, 2026-11-23) : V2** — `CO5300 + CST816/CST820`. Probe I2C : `CST816=0x15` répond, `FT3168=0x38` absent, log série « board revision: V2 (CO5300 + CST816/CST820) ».
+- **Revision detection** : I2C probe of the CST816 touchscreen address (`0x15`) on `SDA=15` / `SCL=14`. Address answering → V2 ; otherwise V1/original. The screen is driven in CO5300 in both cases, with an X offset of `0x10` if V2.
+- **V2 display (CO5300, QSPI)** : PCLK=11, D0=4, D1=5, D2=6, D3=7, CS=12, RGB565, QSPI.
+- **BSP component** : `waveshare/esp32_s3_touch_amoled_1_8` (registry, v2.0.3), for `idf: ">=5.5,<6.1"`. Provides display + touchscreen + brightness + microSD (`bsp_display_start`, `bsp_display_brightness_set`, `bsp_sdcard_mount`).
+- **Revision measured on the board (smoke 1, 2026-11-23) : V2** — `CO5300 + CST816/CST820`. I2C probe : `CST816=0x15` answers, `FT3168=0x38` absent, serial log « board revision: V2 (CO5300 + CST816/CST820) ».
 
-## Périphériques embarqués
+## Onboard peripherals
 
-| Bloc | Référence | Bus |
+| Block | Reference | Bus |
 |---|---|---|
 | PMU | AXP2101 | I2C |
-| IMU 6 axes | QMI8658 | I2C |
+| 6-axis IMU | QMI8658 | I2C |
 | RTC | PCF85063 | I2C |
-| Audio | ES8311 + haut-parleur + micro | I2C/I2S |
+| Audio | ES8311 + speaker + mic | I2C/I2S |
 | GPIO expander | TCA9554 | I2C |
-| microSD | slot TF | SDMMC (demo LVGL officielle : SDMMC) |
-| Flash | 16 MB NOR externe | SPI |
-| PSRAM | 8 MB OPI | interne S3R8 |
-| Batterie | MX1.25 2P 3.7 V | AXP2101 |
-| Boutons | PWR, BOOT | GPIO |
+| microSD | TF slot | SDMMC (official LVGL demo : SDMMC) |
+| Flash | 16 MB external NOR | SPI |
+| PSRAM | 8 MB OPI | internal S3R8 |
+| Battery | MX1.25 2P 3.7 V | AXP2101 |
+| Buttons | PWR, BOOT | GPIO |
 
-## Stockage par défaut : Flash interne (`drydock_fs`)
+## Default storage : Internal Flash (`drydock_fs`)
 
-Depuis la bascule stockage, Drydock ne dépend plus de la microSD. La partition `drydock_fs` (`data/fat`, **12 Mo**) de la Flash 16 Mo est montée sur `/drydock` via `esp_vfs_fat_spiflash_mount_rw_wl()` (Wear Levelling, `format_if_mount_failed = true` au premier boot, LFN activé). Layout : `/drydock/` (voir `SPEC.md`). La layout est identique quand la carte est exposée au PC en mode `DEVICE_PC_SYNC` (TinyUSB MSC spiflash, volume `DRYDOCK`).
+Since the storage switch, Drydock no longer depends on the microSD. The `drydock_fs` partition (`data/fat`, **12 MB**) of the 16 MB Flash is mounted on `/drydock` via `esp_vfs_fat_spiflash_mount_rw_wl()` (Wear Levelling, `format_if_mount_failed = true` on first boot, LFN enabled). Layout : `/drydock/` (see `SPEC.md`). The layout is identical when the board is exposed to the PC in `DEVICE_PC_SYNC` mode (TinyUSB MSC spiflash, `DRYDOCK` volume).
 
-### microSD (option future)
+### microSD (future option)
 
-SDMMC 1 bit, CS piloté par le TCA9554 (EXIO7), format FAT32. Le BSP monte la carte à `BSP_SD_MOUNT_POINT` (`/sdcard`) via `bsp_sdcard_mount()`. [À vérifier] broches SDMMC exactes (CMD/CLK/D0) contre le macro `BSP_SD_*` du BSP.
+SDMMC 1 bit, CS driven by the TCA9554 (EXIO7), FAT32 format. The BSP mounts the card at `BSP_SD_MOUNT_POINT` (`/sdcard`) via `bsp_sdcard_mount()`. [To verify] exact SDMMC pins (CMD/CLK/D0) against the `BSP_SD_*` macro of the BSP.
 
 ## USB-C : Device vs Host
 
-- Device : énumération TinyUSB mesurée (JTAG/CDC). Le mode PC Sync (MSC) s'appuie dessus.
-- Host : le même port doit passer en Host (usb_host_lib) pour piloter le FM-1. [À vérifier Phase 0] alimentation de VBUS en autonomie (sans PC branché) et câble USB-C adapté. C'est le point le plus risqué de la Phase 0 ; à valider avant d'engager la Phase 2.
+- Device : measured TinyUSB enumeration (JTAG/CDC). The PC Sync (MSC) mode relies on it.
+- Host : the same port must switch to Host (usb_host_lib) to drive the FM-1. [To verify Phase 0] VBUS power supply in standalone (without PC connected) and a suitable USB-C cable. This is the riskiest point of Phase 0 ; to validate before committing to Phase 2.
