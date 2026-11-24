@@ -8,6 +8,8 @@ firmware/.espressif/
 
 # Python
 companion/.venv/
+# config locale utilisateur (le modèle suivi est vessels.example.toml)
+companion/vessels.toml
 __pycache__/
 *.pyc
 .pytest_cache/

@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "wear_levelling.h"
 
 #define DRY_MOUNT_POINT "/drydock"
 #define DRY_STOCK_FILE  "stock/fm1_v15_official.fwsc"
@@ -43,6 +44,10 @@ typedef struct {
 /** Monte la partition FAT interne (format si absente au premier boot). */
 esp_err_t drydock_sd_mount(void);
 esp_err_t drydock_sd_unmount(void);
+
+/** Init Wear Levelling seul, sans VFS (mode DEVICE_PC_SYNC : le bloc est
+ *  exposé au PC via TinyUSB MSC, le MCU n'y accède pas). */
+esp_err_t drydock_fs_wl_init(wl_handle_t *out_wl);
 
 /** Espace libre du système de fichiers monté, en octets (statvfs). */
 esp_err_t drydock_fs_free(uint64_t *out_bytes);

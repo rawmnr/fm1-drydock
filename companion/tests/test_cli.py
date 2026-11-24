@@ -33,8 +33,11 @@ def test_verify_missing_target_fails(tmp_path: Path) -> None:
 
 
 def test_sync_writes_manifest_via_cli(tmp_path: Path) -> None:
-    result = runner.invoke(app, ["sync", "--target", str(tmp_path)])
-    # aucune config ni réseau : doit échouer proprement
+    # config explicitement absente : échoue proprement (indépendant du CWD,
+    # où un vrai vessels.toml utilisateur peut exister)
+    result = runner.invoke(
+        app, ["sync", "--target", str(tmp_path), "--config", str(tmp_path / "nope.toml")]
+    )
     assert result.exit_code == 1
     assert "vessels.toml" in result.output or "erreur" in result.output
 

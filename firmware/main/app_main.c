@@ -14,7 +14,9 @@
 #include "bsp/esp-bsp.h"
 #include "driver/i2c_master.h"
 #include "drydock_storage.h"
+#include "drydock_usb_msc_device.h"
 #include "esp_chip_info.h"
+#include "esp_console.h"
 #include "esp_flash.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -250,6 +252,66 @@ static void usb_host_start(void)
 }
 #endif /* SMOKE_USB_HOST */
 
+/* ---- Bascule de mode : bouton tactile + commande console ---- */
+
+static void switch_mode_cb(lv_event_t *e)
+{
+    (void)e;
+    ESP_LOGI(TAG, "bouton tactile: bascule de mode");
+    const boot_mode_t next = boot_mode_current() == BOOT_MODE_PC_SYNC ? BOOT_MODE_HOST_FLASH
+                                                                      : BOOT_MODE_PC_SYNC;
+    boot_mode_switch(next);
+}
+
+static int console_cmd_pc_sync(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    boot_mode_switch(BOOT_MODE_PC_SYNC);
+    return 0;
+}
+
+static int console_cmd_host(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    boot_mode_switch(BOOT_MODE_HOST_FLASH);
+    return 0;
+}
+
+static void console_start(void)
+{
+    esp_console_repl_t *repl = NULL;
+    esp_console_repl_config_t repl_cfg = ESP_CONSOLE_REPL_CONFIG_DEFAULT();
+    repl_cfg.prompt = "drydock>";
+
+    const esp_console_cmd_t cmds[] = {
+        {
+            .command = "pc_sync",
+            .help = "basculer en mode DEVICE_PC_SYNC (MSC) puis redémarrer",
+            .func = &console_cmd_pc_sync,
+        },
+        {
+            .command = "host",
+            .help = "basculer en mode HOST_FLASH puis redémarrer",
+            .func = &console_cmd_host,
+        },
+    };
+    for (size_t i = 0; i < sizeof(cmds) / sizeof(cmds[0]); i++) {
+        ESP_ERROR_CHECK(esp_console_cmd_register(&cmds[i]));
+    }
+
+#if defined(CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG)
+    esp_console_dev_usb_serial_jtag_config_t hw = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_console_new_repl_usb_serial_jtag(&hw, &repl_cfg, &repl));
+#else
+    esp_console_dev_uart_config_t hw = ESP_CONSOLE_DEV_UART_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_console_new_repl_uart(&hw, &repl_cfg, &repl));
+#endif
+    ESP_ERROR_CHECK(esp_console_start_repl(repl));
+    ESP_LOGI(TAG, "console prête : 'pc_sync' | 'host'");
+}
+
 static void status_add(const char *fmt, ...)
 {
     va_list ap;
@@ -290,6 +352,19 @@ static void build_screen(void)
     lv_label_set_long_mode(s_body, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(s_body, 330);
     lv_obj_align(s_body, LV_ALIGN_TOP_MID, 0, 70);
+
+    /* Bouton de bascule de mode (tactile) : PC SYNC <-> HOST_FLASH. */
+    const bool pc_sync = boot_mode_current() == BOOT_MODE_PC_SYNC;
+    lv_obj_t *btn = lv_button_create(scr);
+    lv_obj_set_size(btn, 180, 44);
+    lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_set_style_bg_color(btn, pc_sync ? lv_color_hex(0x2f9bff) : lv_color_hex(0x1b7a2e),
+                              LV_PART_MAIN);
+    lv_obj_add_event_cb(btn, switch_mode_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lbl = lv_label_create(btn);
+    lv_label_set_text(lbl, pc_sync ? "DONE & Reboot" : "PC SYNC");
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_center(lbl);
 }
 
 void app_main(void)
@@ -339,8 +414,36 @@ void app_main(void)
         bsp_display_unlock();
     }
 
+    if (boot_mode_current() == BOOT_MODE_PC_SYNC) {
+        /* Exclusion mutuelle : PAS de VFS local, le bloc spiflash part au PC. */
+        ESP_LOGI(TAG, "DEVICE_PC_SYNC : pas de montage VFS, exposition MSC");
+        wl_handle_t wl = WL_INVALID_HANDLE;
+        ESP_ERROR_CHECK(drydock_fs_wl_init(&wl));
+        ESP_ERROR_CHECK(drydock_msc_start(wl));
+        status_add("PC SYNC: volume DRYDOCK exposé");
+        status_add("Toucher DONE ou débrancher pour revenir");
+        refresh_display();
+        int gone = 0;
+        while (1) {
+            vTaskDelay(pdMS_TO_TICKS(500));
+            /* l'hôte est parti : débranchement (tud_connected) ou éjection SCSI
+             * (le montage MSC repasse côté app, plus exposé au PC). */
+            const bool host_here = drydock_msc_host_connected() && drydock_msc_is_exposed();
+            if (host_here) {
+                gone = 0;
+                continue;
+            }
+            /* retour au dock même si la batterie maintient l'alimentation (flag RTC conservé) */
+            if (++gone >= 8) { /* ~4 s sans hôte */
+                ESP_LOGW(TAG, "hôte USB parti (débranchement/éjection): retour HOST_FLASH");
+                boot_mode_switch(BOOT_MODE_HOST_FLASH);
+            }
+        }
+    }
+
     probe_sdcard();
     refresh_display();
+    console_start();
 
 #ifdef SMOKE_USB_HOST
     status_add("USB Host probe active");

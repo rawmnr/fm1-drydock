@@ -205,7 +205,7 @@ def sync(
     for err in result.errors:
         typer.secho(f"erreur {err}", fg=typer.colors.RED, err=True)
     if not result.errors:
-        print(f"manifest.json écrit dans {dest / 'drydock'}")
+        print(f"manifest.json écrit dans {dest}")
     else:
         raise typer.Exit(1)
 

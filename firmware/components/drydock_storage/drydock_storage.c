@@ -105,6 +105,21 @@ esp_err_t drydock_sd_unmount(void)
     return ret;
 }
 
+esp_err_t drydock_fs_wl_init(wl_handle_t *out_wl)
+{
+    const esp_partition_t *part =
+        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "drydock_fs");
+    if (part == NULL) {
+        ESP_LOGE(TAG, "partition drydock_fs (data/fat) introuvable");
+        return ESP_ERR_NOT_FOUND;
+    }
+    const esp_err_t ret = wl_mount(part, out_wl);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "wl_mount: %s", esp_err_to_name(ret));
+    }
+    return ret;
+}
+
 esp_err_t drydock_fs_free(uint64_t *out_bytes)
 {
     uint64_t total = 0;
