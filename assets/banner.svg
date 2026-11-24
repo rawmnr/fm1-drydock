@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" width="1280" height="360" role="img" aria-label="FM1-Drydock banner">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#101d33"/>
+      <stop offset="1" stop-color="#070b16"/>
+    </linearGradient>
+    <linearGradient id="waterGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0891b2"/>
+      <stop offset="1" stop-color="#164e63"/>
+    </linearGradient>
+    <linearGradient id="synthGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e293b"/>
+      <stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="screenGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#082f49"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.2" fill="#1e3a5f"/>
+    </pattern>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="1280" height="360" rx="24" fill="url(#bgGrad)"/>
+  <rect x="0" y="0" width="1280" height="360" rx="24" fill="url(#dots)" opacity="0.4"/>
+  <rect x="1" y="1" width="1278" height="358" rx="23" fill="none" stroke="#1e3a5f" stroke-opacity="0.8"/>
+
+  <path d="M0,318 C80,298 160,338 240,318 S400,298 480,318 S640,338 720,318 S880,298 960,318 S1120,338 1200,318 L1280,318 L1280,360 L0,360 Z" fill="#0e7490" opacity="0.22"/>
+  <path d="M0,334 C80,316 160,350 240,334 S400,316 480,334 S640,350 720,334 S880,316 960,334 S1120,350 1200,334 L1280,334 L1280,360 L0,360 Z" fill="#22d3ee" opacity="0.10"/>
+
+  <g>
+    <rect x="120" y="150" width="26" height="150" rx="6" fill="#1c2b45" stroke="#334d75"/>
+    <rect x="434" y="150" width="26" height="150" rx="6" fill="#1c2b45" stroke="#334d75"/>
+    <rect x="120" y="274" width="340" height="26" rx="8" fill="#16233a" stroke="#334d75"/>
+    <circle cx="133" cy="150" r="4" fill="#22d3ee" filter="url(#glow)"/>
+    <circle cx="447" cy="150" r="4" fill="#f59e0b" filter="url(#glow)"/>
+
+    <path d="M146,212 c24,-14 48,-14 72,0 s48,14 72,0 s48,-14 72,0 s48,14 72,0 L460,274 L146,274 Z" fill="url(#waterGrad)" opacity="0.9"/>
+
+    <rect x="170" y="150" width="240" height="110" rx="14" fill="url(#synthGrad)" stroke="#3b82f6" stroke-opacity="0.6"/>
+    <rect x="190" y="168" width="120" height="52" rx="6" fill="url(#screenGrad)" stroke="#22d3ee" stroke-opacity="0.7"/>
+    <polyline points="196,196 206,184 216,204 226,178 236,200 246,190 256,196 266,186 276,202 286,192 296,196 306,190" fill="none" stroke="#22d3ee" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+    <circle cx="200" cy="240" r="10" fill="#0b1526" stroke="#64748b"/>
+    <circle cx="240" cy="240" r="10" fill="#0b1526" stroke="#64748b"/>
+    <circle cx="280" cy="240" r="10" fill="#0b1526" stroke="#64748b"/>
+    <circle cx="320" cy="240" r="10" fill="#0b1526" stroke="#64748b"/>
+    <line x1="200" y1="240" x2="200" y2="232" stroke="#94a3b8" stroke-width="2"/>
+    <line x1="240" y1="240" x2="246" y2="234" stroke="#94a3b8" stroke-width="2"/>
+    <line x1="280" y1="240" x2="280" y2="232" stroke="#94a3b8" stroke-width="2"/>
+    <line x1="320" y1="240" x2="314" y2="234" stroke="#94a3b8" stroke-width="2"/>
+    <text x="356" y="247" font-family="ui-monospace, 'Courier New', monospace" font-size="20" font-weight="bold" fill="#e2e8f0">FM-1</text>
+    <rect x="392" y="228" width="12" height="8" rx="3" fill="#22d3ee" opacity="0.85" filter="url(#glow)"/>
+
+    <rect x="330" y="280" width="70" height="14" rx="3" fill="#0b1526" stroke="#475569"/>
+    <text x="337" y="290" font-family="ui-monospace, 'Courier New', monospace" font-size="9" fill="#94a3b8">ESP32-S3</text>
+
+    <path d="M404,232 C440,250 430,290 470,300 S520,330 566,322" fill="none" stroke="#38bdf8" stroke-width="5" stroke-linecap="round" opacity="0.8"/>
+    <circle cx="566" cy="322" r="6" fill="#38bdf8" filter="url(#glow)"/>
+  </g>
+
+  <g font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <text x="600" y="158" font-size="64" font-weight="800" letter-spacing="2" fill="#f1f5f9">FM1-<tspan fill="#22d3ee">DRYDOCK</tspan></text>
+    <text x="600" y="196" font-size="19" fill="#9fb4d8">Standalone ESP32-S3 AMOLED firmware loader for the M-VAVE FM-1</text>
+  </g>
+
+  <g font-family="ui-monospace, 'Courier New', monospace" font-size="13" fill="#7dd3fc" text-anchor="middle">
+    <rect x="600" y="240" width="120" height="34" rx="17" fill="#0e2a3d" fill-opacity="0.6" stroke="#22d3ee" stroke-opacity="0.6"/>
+    <text x="660" y="262">100% OFFLINE</text>
+    <rect x="732" y="240" width="150" height="34" rx="17" fill="#0e2a3d" fill-opacity="0.6" stroke="#22d3ee" stroke-opacity="0.6"/>
+    <text x="807" y="262">USB-C DUAL ROLE</text>
+    <rect x="894" y="240" width="85" height="34" rx="17" fill="#0e2a3d" fill-opacity="0.6" stroke="#22d3ee" stroke-opacity="0.6"/>
+    <text x="936.5" y="262">microSD</text>
+    <rect x="991" y="240" width="160" height="34" rx="17" fill="#0e2a3d" fill-opacity="0.6" stroke="#22d3ee" stroke-opacity="0.6"/>
+    <text x="1071" y="262">STOCK V15 RESCUE</text>
+  </g>
+</svg>
