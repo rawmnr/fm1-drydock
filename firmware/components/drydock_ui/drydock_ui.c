@@ -299,9 +299,8 @@ static void flash_click_cb(lv_event_t *e)
         return;
     }
     lv_label_set_text(s_det_status, "Vérification SHA-256…");
-    char path[96];
-    snprintf(path, sizeof(path), "vessels/%s", s_current_vessel.file);
-    if (drydock_midi_flash(path) != ESP_OK) {
+    /* le manifest contient déjà le préfixe vessels/ (contrat syncer.py) */
+    if (drydock_midi_flash(s_current_vessel.file) != ESP_OK) {
         lv_label_set_text(s_det_status, "Flash indisponible (MIDI ?)");
         return;
     }

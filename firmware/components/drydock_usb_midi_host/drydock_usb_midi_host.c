@@ -242,7 +242,11 @@ static int serve(const uint8_t *image, size_t image_len, uint32_t finish, int id
         }
         uint8_t rsp[FW_UP_MAXDATA + 64];
         const size_t rn = fw_up_response(addr, image + addr, dlen, fl, rsp, sizeof(rsp));
-        if (rn == 0 || midi_send_sysex(rsp, rn) != ESP_OK) {
+        if (rn == 0) {
+            return 0;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10)); /* pacing identique au hub (sleep(10)) */
+        if (midi_send_sysex(rsp, rn) != ESP_OK) {
             return 0;
         }
         served++;
