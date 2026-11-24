@@ -21,7 +21,7 @@ respectées : zéro écriture sur le FM-1, commits atomiques par jalon.
 | 2 PC Sync MSC | **FAIT (HIL partiel)** | HIL #2 : volume `DRYDOCK` (D:\), `drydock probe/sync/verify` **tous OK** sur matière (stock + rescue + 3 vessels + manifest < 2 Mo). Auto-retour HOST_FLASH testé en éjection SCSI. |
 | 3 Flash/Rescue USB Host | **FAIT (code + tests hôte)** | M-UPGRADE complet (identité, verify → loader → write → reboot) et Rescue UBOOT1.00 (check lecture seule + flash confirmé). Protocole mesuré dans le JS du hub (`docs/protocol-sysex.md`). Test hôte bit-à-bit C ↔ Python (CI gcc). |
 | 4 UI LVGL 9 | **FAIT (compile)** | 6 écrans + barre de statut, callbacks flash → UI sous lock display. Non exécutée sur carte (board bloquée en MSC, voir blocages). |
-| 5 Durcissement/CI | **FAIT** | pytest **43 passed, 10 skipped** (C hôte, pas de gcc Windows), ruff/mypy stricts, `idf.py size` image **861 135 octets** (~841 Ko), partition 3 M, build zéro warning. |
+| 5 Durcissement/CI | **FAIT** | pytest **53 passed, 0 skipped** (les 10 tests C hôte s'exécutent nativement sous Windows via **zig cc**, bit-à-bit vs références Python), ruff/mypy stricts, `idf.py size` image **861 135 octets** (~841 Ko), partition 3 M, build zéro warning. |
 
 ## Blocages / points ouverts
 
@@ -33,8 +33,9 @@ respectées : zéro écriture sur le FM-1, commits atomiques par jalon.
   la carte (ou un admin : `pnputil /remove-device "USB\VID_303A&PID_4002\0001"`)**.
   Le firmware in-tree contient déjà le fix `is_exposed` : dès le prochain flash,
   une éjection SCSI suffit à déclencher l'auto-retour (plus besoin de débrancher).
-- **Aucun compilateur C hôte Windows** : test bit-à-bit C `.fwsc`/M-UPGRADE skipé
-  localement, vert sur CI (Linux/gcc).
+- ~~Aucun compilateur C hôte Windows~~ → résolu : **zig cc** (pip `ziglang`)
+  compile le protocole C et les **10 tests bit-à-bit passent localement**
+  (cadrage M-UPGRADE, ciphers JieLi, CDB SCSI, clé chip, extracteur `.fwsc`).
 - **VBUS Host** : le FM-1 doit être alimenté par la carte en mode Host
   (point risqué Phase 0, `docs/hardware-waveshare-1.8.md`) — à valider au
   prochain HIL.
