@@ -1,0 +1,5 @@
+version: "0.1.0"
+
+dependencies:
+  idf: ">=5.5"
+  lvgl/lvgl: "^9.2"

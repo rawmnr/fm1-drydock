@@ -115,7 +115,7 @@ Stockage par défaut : partition `drydock_fs` (`data/fat`, 12 Mo) dans la Flash 
   - Implémenter `firmware_hub.py`, `models.py`, `syncer.py` et les tests unitaires.
 - **Phase 2 — Core USB Firmware (`firmware/`)** :
   - Implémenter `drydock_usb_msc_device` (PC Sync) + `drydock_storage`.
-  - Implémenter `drydock_usb_midi_host` (flash `.fwsc` vers FM-1).
-  - Implémenter `drydock_usb_rescue_host` (portage C de `fm1_rescue.py` / `jl-uboot-tool`).
+  - Implémenter `drydock_usb_midi_host` (flash `.fwsc` vers FM-1) — moteur M-UPGRADE complet (handshake, serve 0x30, touches UPGRADE/UBOOT).
+  - Implémenter `drydock_usb_rescue_host` (portage C de `fm1_rescue.py` / `jl-uboot-tool`) — BOT/SCSI, helper loader, clé chip, flash sectoriel relu.
 - **Phase 3 — UI LVGL & Intégration** :
-  - Interface tactile complète, vérification SHA-256 pré-flash, packaging des releases.
+  - Interface tactile complète (accueil, détail+flash, Rescue & Stock, PC Sync, USB Diag, barre de statut), vérification SHA-256 pré-flash, packaging des releases.
