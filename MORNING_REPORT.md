@@ -41,6 +41,12 @@ respectées : zéro écriture sur le FM-1, commits atomiques par jalon.
 - **Flash MIDI non testé sur matière** : le protocole est porté bit-à-bit du
   JS du hub et vérifié par le test hôte, mais l'exécution réelle sur le FM-1
   attend le déblocage de la carte.
+- **Interface FM-1 mesurée (PnP PC, lecture seule)** : composite
+  `VID_4D4A&PID_4155`, MI_00 = AudioControl `Class_01&SubClass_01` (sans
+  endpoint, « MEDIA » sous Windows) ; l'interface MIDI streaming
+  `0x01/0x03` n'apparaît pas sous Windows mais existe dans le descripteur.
+  Le host cherche donc une interface **avec endpoints IN+OUT**
+  (`drydock_usb_find_data_iface`, fix `5f96058`).
 
 ## Protocole de test matinal (≈5 min) — après débranchement/rebranchement
 
