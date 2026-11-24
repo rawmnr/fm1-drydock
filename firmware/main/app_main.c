@@ -1,9 +1,8 @@
-/* FM1-Drydock — scaffold & smoke harness (Waveshare ESP32-S3-Touch-AMOLED-1.8).
+/* FM1-Drydock — firmware de la cartouche (Waveshare ESP32-S3-Touch-AMOLED-1.8).
  *
- * Build par défaut : smoke 1 (écran + tactile + détection de révision + PMU AXP2101)
- * puis smoke 2 (microSD en lecture seule, layout drydock).
- * Build smoke 3 (probe USB Host -> VID/PID sur l'AMOLED) :
- *     idf.py -DSMOKE_USB_HOST=1 build
+ * Boot dual-mode : HOST_FLASH (défaut) monte /drydock et pilote le FM-1 en
+ * USB Host (MIDI M-UPGRADE / Rescue UBOOT1.00) ; DEVICE_PC_SYNC expose la
+ * partition FAT au PC en USB MSC (TinyUSB), sans VFS local.
  */
 #include <stdarg.h>
 #include <stdint.h>
@@ -14,7 +13,10 @@
 #include "bsp/esp-bsp.h"
 #include "driver/i2c_master.h"
 #include "drydock_storage.h"
+#include "drydock_usb_host.h"
+#include "drydock_usb_midi_host.h"
 #include "drydock_usb_msc_device.h"
+#include "drydock_usb_rescue_host.h"
 #include "esp_chip_info.h"
 #include "esp_console.h"
 #include "esp_flash.h"
@@ -25,11 +27,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lvgl.h"
-
-#ifdef SMOKE_USB_HOST
-#include "esp_intr_alloc.h"
-#include "usb/usb_host.h"
-#endif
 
 static const char *TAG = "drydock";
 
@@ -177,80 +174,23 @@ static void probe_sdcard(void)
     drydock_sd_unmount();
 }
 
-#ifdef SMOKE_USB_HOST
-static volatile uint8_t s_new_dev_addr;
-static volatile uint8_t s_dev_gone;
-
-static void client_event_cb(const usb_host_client_event_msg_t *msg, void *arg)
-{
-    (void)arg;
-    switch (msg->event) {
-    case USB_HOST_CLIENT_EVENT_NEW_DEV:
-        s_new_dev_addr = msg->new_dev.address;
-        break;
-    case USB_HOST_CLIENT_EVENT_DEV_GONE:
-        s_dev_gone = 1;
-        break;
-    default:
-        break;
-    }
-}
-
-static void usb_client_task(void *arg)
-{
-    (void)arg;
-    const usb_host_client_config_t cfg = {
-        .is_synchronous = false,
-        .max_num_event_msg = 5,
-        .async = {
-            .client_event_callback = client_event_cb,
-            .callback_arg = NULL,
-        },
-    };
-    usb_host_client_handle_t client = NULL;
-    if (usb_host_client_register(&cfg, &client) != ESP_OK) {
-        ESP_LOGE(TAG, "usb client register failed");
-        vTaskDelete(NULL);
-    }
-    while (1) {
-        usb_host_client_handle_events(client, portMAX_DELAY);
-        if (s_dev_gone) {
-            s_dev_gone = 0;
-            ESP_LOGW(TAG, "USB device disconnected");
-            status_add("USB: débranché");
-            refresh_display();
-        }
-        if (s_new_dev_addr) {
-            uint8_t addr = s_new_dev_addr;
-            s_new_dev_addr = 0;
-            ESP_LOGI(TAG, "nouvel appareil USB à l'adresse %u", addr);
-            usb_device_handle_t dev = NULL;
-            if (usb_host_device_open(client, addr, &dev) == ESP_OK) {
-                const usb_device_desc_t *desc = NULL;
-                if (usb_host_get_device_descriptor(dev, &desc) == ESP_OK && desc != NULL) {
-                    ESP_LOGI(TAG, "VID=%04X PID=%04X, classe 0x%02X",
-                             desc->idVendor, desc->idProduct, desc->bDeviceClass);
-                    status_add("USB Host: VID=%04X PID=%04X", desc->idVendor, desc->idProduct);
-                    refresh_display();
-                }
-                usb_host_device_close(client, dev);
-            } else {
-                ESP_LOGW(TAG, "impossible d'ouvrir le dispositif addr %u", addr);
-            }
-        }
-    }
-}
-
+/* Moteurs USB Host (MIDI M-UPGRADE + Rescue UBOOT1.00) sur le FM-1. */
 static void usb_host_start(void)
 {
-    const usb_host_config_t host_cfg = {
-        .skip_phy_setup = false,
-        .intr_flags = ESP_INTR_FLAG_LEVEL1,
+    const drydock_usb_driver_t drivers[] = {
+        *drydock_midi_driver(),
+        *drydock_rescue_driver(),
     };
-    ESP_ERROR_CHECK(usb_host_install(&host_cfg));
-    xTaskCreate(usb_client_task, "usb_client", 4096, NULL, 5, NULL);
+    const esp_err_t ret =
+        drydock_usb_host_start(drivers, sizeof(drivers) / sizeof(drivers[0]));
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "usb_host_start: %s", esp_err_to_name(ret));
+        status_add("USB Host: %s", esp_err_to_name(ret));
+        return;
+    }
+    status_add("USB Host: FM-1 détecté -> flash MIDI / rescue UBOOT1.00");
+    refresh_display();
 }
-#endif /* SMOKE_USB_HOST */
 
 /* ---- Bascule de mode : bouton tactile + commande console ---- */
 
@@ -445,11 +385,10 @@ void app_main(void)
     refresh_display();
     console_start();
 
-#ifdef SMOKE_USB_HOST
-    status_add("USB Host probe active");
-    refresh_display();
+    /* Moteurs USB Host : MIDI M-UPGRADE (flash) + Rescue UBOOT1.00 (SCSI). */
+    ESP_ERROR_CHECK(drydock_midi_init(NULL));
+    ESP_ERROR_CHECK(drydock_rescue_init(NULL));
     usb_host_start();
-#endif
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(5000));

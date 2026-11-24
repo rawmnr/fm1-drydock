@@ -1,8 +1,10 @@
-"""Tests hôte bit-à-bit du parseur C .fwsc contre la référence python (fm1_rescue.py).
+"""Tests hôte bit-à-bit du protocole C (drydock_proto) contre la référence
+python : parseur .fwsc (fm1_rescue.py), ciphers JieLi (jielib.c) et cadrage
+M-UPGRADE du hub (upgrade.c).
 
-Compile companion/proto/fwsc.c en exécutable natif, l'exécute sur de vrais .fwsc
-téléchargés en Phase 1 (cache drydock-sync), et compare l'extraction de la zone
-d'applications (produit, offset, sha256) à la référence python bit pour bit.
+Compile firmware/components/drydock_proto en exécutable natif, l'exécute sur
+de vrais .fwsc (cache drydock-sync ou téléchargés) et compare bit à bit avec
+les références python. Skipé si aucun compilateur C hôte n'est disponible.
 """
 from __future__ import annotations
 
@@ -16,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-PROTO = Path(__file__).resolve().parent.parent / "proto"
+PROTO = Path(__file__).resolve().parent.parent.parent / "firmware" / "components" / "drydock_proto"
 
 
 # ---- référence python, portage exact de fm1_rescue.py ----
@@ -33,6 +35,80 @@ def enc(buf: bytearray, off: int, size: int, key: int = 0xFFFF) -> None:
     for i in range(off, off + size):
         buf[i] ^= key & 0xFF
         key = ((key << 1) ^ (0x1021 if key & 0x8000 else 0)) & 0xFFFF
+
+
+def sfc(buf: bytearray, size: int, key: int) -> None:
+    for i in range(0, size, 32):
+        enc(buf, i, min(size - i, 32), key ^ (i >> 2))
+
+
+MAGIC = "孟黎我爱你，玉林".encode("gb2312")
+
+
+def mengli(data: bytes) -> bytes:
+    out = bytearray(data)
+    crc = crc16(b"\xff\xff", 0xFFFF)
+    for i in range(len(out)):
+        crc = crc16(MAGIC[i % len(MAGIC) : i % len(MAGIC) + 1], crc)
+        out[i] ^= crc & 0xFF
+    return bytes(out)
+
+
+def chip_key(blob: bytes) -> int | None:
+    assert len(blob) == 34
+    if crc16(blob[:32]) != struct.unpack_from("<H", blob, 32)[0]:
+        return None
+    s = sum(blob[:16]) & 0xFF
+    s = 0xAA if s >= 0xE0 else 0x55 if s <= 0x10 else s
+    return sum(1 << i for i in range(16) if (blob[16 + i] ^ blob[15 - i]) < s)
+
+
+def cdb(op: int, sub: int, args: bytes) -> bytes:
+    c = bytes([op, sub]) + args
+    return c + b"\xFF" * (16 - len(c))
+
+
+# ---- référence python, portage exact du hub (upgrade.c) ----
+def pack7(data: bytes) -> bytes:
+    out = bytearray()
+    acc = 0
+    nb = 0
+    for b in data:
+        acc |= b << nb
+        nb += 8
+        while nb >= 7:
+            out.append(acc & 0x7F)
+            acc >>= 7
+            nb -= 7
+    if nb:
+        out.append(acc & 0x7F)
+    return bytes(out)
+
+
+def unpack7(s: bytes) -> bytes:
+    out = bytearray()
+    acc = 0
+    nb = 0
+    for b in s:
+        acc |= (b & 0x7F) << nb
+        nb += 7
+        while nb >= 8:
+            out.append(acc & 0xFF)
+            acc >>= 8
+            nb -= 8
+    return bytes(out)
+
+
+def upgrade_response(addr: int, data: bytes, fl: int = 0) -> bytes:
+    body = bytearray(
+        [0x00, 0x59, 0x30, (len(data) + 8) & 0xFF, ((len(data) + 8) >> 8) & 0xFF, 0, fl]
+    )
+    body += struct.pack("<I", addr)
+    body += struct.pack("<H", len(data))
+    body += b"\x00" + data
+    s = sum(body[6:]) & 0xFF
+    body.append(~s & 0xFF)
+    return bytes([0xF0]) + pack7(bytes(body)) + bytes([0xF7])
 
 
 def logical_image(raw: bytes) -> tuple[str, bytes]:
@@ -86,12 +162,34 @@ def extractor(tmp_path_factory) -> Path:
     cc = _cc()
     if cc is None:
         pytest.skip("aucun compilateur C hôte disponible")
-    bin_path = tmp_path_factory.mktemp("bin") / ("fwsc_extract.exe" if sys.platform == "win32" else "fwsc_extract")
+    bin_dir = tmp_path_factory.mktemp("bin")
+    exe = bin_dir / ("fwsc_extract.exe" if sys.platform == "win32" else "fwsc_extract")
     subprocess.run(
-        [cc, "-O2", "-I", str(PROTO), str(PROTO / "fwsc.c"), str(PROTO / "main.c"), "-o", str(bin_path)],
+        [cc, "-O2", "-I", str(PROTO), str(PROTO / "fwsc.c"), str(PROTO / "main.c"), "-o", str(exe)],
         check=True,
     )
-    return bin_path
+    return exe
+
+
+@pytest.fixture(scope="module")
+def harness(tmp_path_factory) -> Path:
+    cc = _cc()
+    if cc is None:
+        pytest.skip("aucun compilateur C hôte disponible")
+    bin_dir = tmp_path_factory.mktemp("bin")
+    exe = bin_dir / ("proto_harness.exe" if sys.platform == "win32" else "proto_harness")
+    subprocess.run(
+        [cc, "-O2", "-I", str(PROTO), str(PROTO / "jielib.c"), str(PROTO / "upgrade.c"),
+         str(PROTO / "fwsc.c"), str(PROTO / "harness.c"), "-o", str(exe)],
+        check=True,
+    )
+    return exe
+
+
+def _run_harness(harness: Path, mode: str, data: bytes, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [str(harness), mode, *args], input=data, capture_output=True,
+    )
 
 
 def _fetch_hub(tmp_path: Path, id_: str, name: str) -> Path:
@@ -144,3 +242,90 @@ def test_c_framer_rejects_official_v15(extractor: Path, tmp_path: Path) -> None:
     app_out = tmp_path / "v15.app"
     res = subprocess.run([str(extractor), str(fwsc), str(app_out)], capture_output=True, text=True)
     assert res.returncode != 0  # pas de marqueur FELUCCA-LOADER-1
+
+
+def test_pack7_unpack7_roundtrip(harness: Path) -> None:
+    data = bytes(range(256)) * 3
+    packed = _run_harness(harness, "pack7", data).stdout
+    assert packed == pack7(data)  # bit à bit vs le hub
+    back = _run_harness(harness, "unpack7", packed).stdout
+    assert back == data
+
+
+def test_upgrade_response_matches_hub(harness: Path) -> None:
+    for addr, fl, data in (
+        (0x00000100, 0, bytes(range(64))),
+        (0x00001000, 3, bytes(range(256)) * 2),  # taille max 512
+        (0xE0000000, 0, b"success\x00"),     # réponse de fin
+        (0xF0000000, 0, b"success\x00"),
+    ):
+        res = _run_harness(harness, "response", data, f"{addr}", f"{fl}", f"{len(data)}")
+        assert res.returncode == 0
+        assert res.stdout == upgrade_response(addr, data, fl)  # bit à bit vs le hub
+
+
+def test_upgrade_request_parse(harness: Path) -> None:
+    # construite par la référence python (même cadrage que le hub)
+    for addr, ln, fl in ((0x00000000, 64, 0), (0x00001000, 512, 5)):
+        body = bytearray([0x00, 0x59, 0x30, 0, 0, 0, fl])
+        body += struct.pack("<I", addr) + struct.pack("<H", ln) + b"\x00"
+        s = sum(body[6:]) & 0xFF
+        body.append(~s & 0xFF)
+        pkt = bytes([0xF0]) + pack7(bytes(body)) + bytes([0xF7])
+        res = _run_harness(harness, "req-parse", pkt)
+        assert res.returncode == 0
+        assert res.stdout == f"OK addr=0x{addr:08X} len={ln} fl={fl}\n".encode()
+
+
+def test_upgrade_identity_parse(harness: Path) -> None:
+    # identité FM-1_900 et ota-FM-1_900 (loader)
+    for text in (b"FM-1_900", b"ota-FM-1_900", b"SLOOP_26"):
+        body = bytearray([0x00, 0x59, 0x11]) + b"\x00" * 3 + text + b"\x00" * (34 - 6 - len(text))
+        pkt = bytes([0xF0]) + pack7(bytes(body)) + bytes([0xF7])
+        res = _run_harness(harness, "id-parse", pkt)
+        assert res.returncode == 0
+        assert res.stdout.strip() == text.decode()
+
+
+def test_mengli_matches_python(harness: Path) -> None:
+    data = bytes(range(256))
+    assert _run_harness(harness, "mengli", data).stdout == mengli(data)
+    # auto-inverse (propriété du chiffre)
+    ciphered = _run_harness(harness, "mengli", mengli(data)).stdout
+    assert ciphered == data
+
+
+def test_cdb_matches_python(harness: Path) -> None:
+    for op, sub, args in (
+        (0xFB, 0x06, b"\x01\xC0\x20\x00\x02\x00\x00\x12\x34"),  # mem_write
+        (0xFD, 0x07, b"\x01\xC0\x20\x00\x00\x10"),              # mem_read
+        (0xFC, 0x0B, b""),                                      # read_id
+        (0xFB, 0x01, b"\x00\x40\x00\x00"),                      # erase secteur
+    ):
+        res = _run_harness(harness, "cdb", args, f"{op}", f"{sub}", f"{len(args)}")
+        assert res.returncode == 0
+        assert res.stdout == cdb(op, sub, args)
+
+
+def test_chip_key_matches_python(harness: Path) -> None:
+    import os
+
+    blob = bytearray(os.urandom(32))
+    blob += struct.pack("<H", crc16(bytes(blob)))
+    key = chip_key(bytes(blob))
+    res = _run_harness(harness, "chipkey", bytes(blob))
+    assert res.returncode == 0
+    assert res.stdout == f"KEY=0x{key:04X}\n".encode()
+    # CRC invalide -> refus
+    blob[0] ^= 0xFF
+    res = _run_harness(harness, "chipkey", bytes(blob))
+    assert res.returncode != 0
+
+
+def test_product_of_matches_python(harness: Path, tmp_path: Path) -> None:
+    fwsc = _fetch_hub(tmp_path, "skiff", "skiff")
+    raw = fwsc.read_bytes()
+    product, _ = logical_image(raw)
+    res = _run_harness(harness, "product", raw)
+    assert res.returncode == 0
+    assert res.stdout.strip().decode() == product
