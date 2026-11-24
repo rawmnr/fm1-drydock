@@ -20,6 +20,11 @@
 #include "jielib.h"
 #include "upgrade.h"
 
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
+
 static int read_all(uint8_t **out, size_t *out_len)
 {
     size_t cap = 4096, n = 0;
@@ -60,6 +65,12 @@ static unsigned long arg_ul(const char *s)
 
 int main(int argc, char **argv)
 {
+#ifdef _WIN32
+    /* mode binaire en entrée ET sortie : le protocole manipule des octets bruts
+     * (sinon un 0x1A entrant est lu comme EOF, et un 0x0A sortant devient CRLF) */
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
     if (argc < 2) {
         fprintf(stderr, "usage: %s <mode> [args]\n", argv[0]);
         return 2;

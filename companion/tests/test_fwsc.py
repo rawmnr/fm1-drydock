@@ -154,7 +154,22 @@ def _cc() -> str | None:
             return c
     # Windows : gcc mingw d'IDF (idf-git), si présent
     mingw = Path(r"C:/Espressif/tools/idf-git/2.44.0/mingw64/bin/gcc.exe")
-    return str(mingw) if mingw.is_file() else None
+    if mingw.is_file():
+        return str(mingw)
+    # Windows : zig (cc hôte) installé via pip (ziglang) dans le venv
+    import ziglang
+
+    z = Path(ziglang.__file__).parent / "zig.exe"
+    if z.is_file():
+        return str(z)
+    return None
+
+
+def _cc_cmd(cc: str) -> list[str]:
+    """Zig sert de compilateur C via le sous-commande `cc` (gcc l'appelle direct)."""
+    if Path(cc).name.lower().startswith("zig"):
+        return [cc, "cc"]
+    return [cc]
 
 
 @pytest.fixture(scope="module")
@@ -165,7 +180,8 @@ def extractor(tmp_path_factory) -> Path:
     bin_dir = tmp_path_factory.mktemp("bin")
     exe = bin_dir / ("fwsc_extract.exe" if sys.platform == "win32" else "fwsc_extract")
     subprocess.run(
-        [cc, "-O2", "-I", str(PROTO), str(PROTO / "fwsc.c"), str(PROTO / "main.c"), "-o", str(exe)],
+        [*_cc_cmd(cc), "-O2", "-I", str(PROTO), str(PROTO / "jielib.c"), str(PROTO / "fwsc.c"),
+         str(PROTO / "main.c"), "-o", str(exe)],
         check=True,
     )
     return exe
@@ -179,7 +195,7 @@ def harness(tmp_path_factory) -> Path:
     bin_dir = tmp_path_factory.mktemp("bin")
     exe = bin_dir / ("proto_harness.exe" if sys.platform == "win32" else "proto_harness")
     subprocess.run(
-        [cc, "-O2", "-I", str(PROTO), str(PROTO / "jielib.c"), str(PROTO / "upgrade.c"),
+        [*_cc_cmd(cc), "-O2", "-I", str(PROTO), str(PROTO / "jielib.c"), str(PROTO / "upgrade.c"),
          str(PROTO / "fwsc.c"), str(PROTO / "harness.c"), "-o", str(exe)],
         check=True,
     )
@@ -284,7 +300,7 @@ def test_upgrade_identity_parse(harness: Path) -> None:
         pkt = bytes([0xF0]) + pack7(bytes(body)) + bytes([0xF7])
         res = _run_harness(harness, "id-parse", pkt)
         assert res.returncode == 0
-        assert res.stdout.strip() == text.decode()
+        assert res.stdout.strip() == text
 
 
 def test_mengli_matches_python(harness: Path) -> None:

@@ -25,6 +25,7 @@ dev = [
   "jsonschema>=4.22",
   "ruff>=0.8",
   "mypy>=1.13",
+  "ziglang>=0.14",  # cc hôte pour les tests bit-à-bit du protocole C sur Windows
 ]
 
 [tool.pytest.ini_options]
