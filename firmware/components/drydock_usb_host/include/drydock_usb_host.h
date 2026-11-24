@@ -49,3 +49,10 @@ const usb_intf_desc_t *drydock_usb_find_interface(const usb_config_desc_t *cfg,
 
 /** Cherche le premier endpoint IN (ou OUT si dir_out) de l'interface. */
 const usb_ep_desc_t *drydock_usb_find_ep(const usb_intf_desc_t *iface, int dir_out);
+
+/** Cherche la première interface qui a des endpoints IN ET OUT, de classe
+ *  donnée (-1 = n'importe). Windows ne montre que MI_00 d'un composite MIDI
+ *  (AudioControl, sans endpoint) : la recherche par classe seule rate
+ *  l'interface de streaming. */
+const usb_intf_desc_t *drydock_usb_find_data_iface(const usb_config_desc_t *cfg,
+                                                   int class_, int subclass, int proto);

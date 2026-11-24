@@ -274,10 +274,11 @@ static esp_err_t attach_fm1(usb_host_client_handle_t client, usb_device_handle_t
 {
     (void)client;
     /* interface MIDI streaming : classe Audio (0x01) sous-classe MIDI (0x03),
-     * sinon la première interface avec endpoints IN/OUT */
-    const usb_intf_desc_t *iface = drydock_usb_find_interface(cfg, 0x01, 0x03, -1);
+     * sinon n'importe quelle interface avec endpoints IN/OUT (le FM-1 expose
+     * MI_00 AudioControl sans endpoint ; Windows ne montre que celle-là). */
+    const usb_intf_desc_t *iface = drydock_usb_find_data_iface(cfg, 0x01, 0x03, -1);
     if (iface == NULL) {
-        iface = drydock_usb_find_interface(cfg, -1, -1, -1);
+        iface = drydock_usb_find_data_iface(cfg, -1, -1, -1);
     }
     if (iface == NULL) {
         return ESP_ERR_NOT_FOUND;

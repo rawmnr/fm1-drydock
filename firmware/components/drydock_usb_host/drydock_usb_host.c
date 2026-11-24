@@ -176,6 +176,37 @@ const usb_intf_desc_t *drydock_usb_find_interface(const usb_config_desc_t *cfg,
     return NULL;
 }
 
+const usb_intf_desc_t *drydock_usb_find_data_iface(const usb_config_desc_t *cfg,
+                                                   int class_, int subclass, int proto)
+{
+    if (cfg == NULL) {
+        return NULL;
+    }
+    const uint8_t *p = (const uint8_t *)cfg;
+    const uint8_t *end = p + cfg->wTotalLength;
+    p += USB_CONFIG_DESC_SIZE;
+    while (p + USB_INTF_DESC_SIZE <= end) {
+        const usb_intf_desc_t *iface = (const usb_intf_desc_t *)p;
+        if (iface->bDescriptorType != USB_W_VALUE_DT_INTERFACE) {
+            p++;
+            continue;
+        }
+        const int c_ok = (class_ < 0 || iface->bInterfaceClass == class_);
+        const int s_ok = (subclass < 0 || iface->bInterfaceSubClass == subclass);
+        const int p_ok = (proto < 0 || iface->bInterfaceProtocol == proto);
+        if (c_ok && s_ok && p_ok &&
+            drydock_usb_find_ep(iface, 0) != NULL && drydock_usb_find_ep(iface, 1) != NULL) {
+            return iface;
+        }
+        p += iface->bLength;
+        while (p + USB_INTF_DESC_SIZE <= end &&
+               ((const usb_intf_desc_t *)p)->bDescriptorType != USB_W_VALUE_DT_INTERFACE) {
+            p += ((const uint8_t *)p)[0] ? ((const uint8_t *)p)[0] : 1;
+        }
+    }
+    return NULL;
+}
+
 const usb_ep_desc_t *drydock_usb_find_ep(const usb_intf_desc_t *iface, int dir_out)
 {
     if (iface == NULL) {
