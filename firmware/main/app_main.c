@@ -9,6 +9,8 @@
 
 #include "boot_mode.h"
 #include "bsp/esp-bsp.h"
+#include "bsp/display.h"
+#include "bsp/touch.h"
 #include "driver/i2c_master.h"
 #include "drydock_storage.h"
 #include "drydock_ui.h"
@@ -21,6 +23,7 @@
 #include "esp_flash.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_lvgl_port.h"
 #include "esp_psram.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -220,6 +223,45 @@ static void console_start(void)
     ESP_LOGI(TAG, "console ready: 'pc_sync' | 'host'");
 }
 
+static void display_round_area(lv_area_t *area)
+{
+    area->x1 &= ~1;
+    area->y1 &= ~1;
+    area->x2 |= 1;
+    area->y2 |= 1;
+}
+
+static void display_start(void)
+{
+    esp_lcd_panel_handle_t panel;
+    esp_lcd_panel_io_handle_t io;
+    esp_lcd_touch_handle_t touch;
+    const bsp_display_config_t panel_cfg = {0};
+    ESP_ERROR_CHECK(bsp_display_new(&panel_cfg, &panel, &io));
+    /* The touch probe sets the panel's revision-specific X offset. */
+    ESP_ERROR_CHECK(bsp_touch_new(NULL, &touch));
+    ESP_ERROR_CHECK(bsp_display_brightness_set(70));
+
+    const lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    ESP_ERROR_CHECK(lvgl_port_init(&port_cfg));
+    const lvgl_port_display_cfg_t display_cfg = {
+        .io_handle = io,
+        .panel_handle = panel,
+        /* Keep the RGB565 tile below the ESP32-S3's 32 KiB SPI DMA limit. */
+        .buffer_size = BSP_LCD_H_RES * 40,
+        .hres = BSP_LCD_H_RES,
+        .vres = BSP_LCD_V_RES,
+        .rounder_cb = display_round_area,
+        .color_format = LV_COLOR_FORMAT_RGB565,
+        .flags = {.buff_dma = true, .swap_bytes = true},
+    };
+    /* This is a QSPI panel, not RGB parallel as in bsp_display_start(). */
+    lv_display_t *disp = lvgl_port_add_disp(&display_cfg);
+    ESP_ERROR_CHECK(disp != NULL ? ESP_OK : ESP_FAIL);
+    const lvgl_port_touch_cfg_t touch_cfg = {.disp = disp, .handle = touch};
+    ESP_ERROR_CHECK(lvgl_port_add_touch(&touch_cfg) != NULL ? ESP_OK : ESP_FAIL);
+}
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "FM1-Drydock firmware");
@@ -252,13 +294,8 @@ void app_main(void)
         ESP_LOGW(TAG, "i2c master bus unavailable");
     }
 
-    lv_display_t *disp = bsp_display_start();
-    if (disp == NULL) {
-        ESP_LOGE(TAG, "bsp_display_start failed");
-        abort();
-    }
+    display_start();
     ESP_LOGI(TAG, "display + touch + LVGL ready (368x448)");
-    ESP_ERROR_CHECK(bsp_display_brightness_set(70));
 
     if (boot_mode_current() == BOOT_MODE_PC_SYNC) {
         /* Mutual exclusion: no local VFS, the spiflash block goes to the PC. */

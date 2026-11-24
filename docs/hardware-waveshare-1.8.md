@@ -22,8 +22,10 @@ The vendor announced the end of the V1 and the switch to the V2 on 2026-05-30. T
 
 - **Revision detection** : I2C probe of the CST816 touchscreen address (`0x15`) on `SDA=15` / `SCL=14`. Address answering → V2 ; otherwise V1/original. The screen is driven in CO5300 in both cases, with an X offset of `0x10` if V2.
 - **V2 display (CO5300, QSPI)** : PCLK=11, D0=4, D1=5, D2=6, D3=7, CS=12, RGB565, QSPI.
-- **BSP component** : `waveshare/esp32_s3_touch_amoled_1_8` (registry, v2.0.3), for `idf: ">=5.5,<6.1"`. Provides display + touchscreen + brightness + microSD (`bsp_display_start`, `bsp_display_brightness_set`, `bsp_sdcard_mount`).
+- **BSP component** : `waveshare/esp32_s3_touch_amoled_1_8` (registry, v2.0.3), for `idf: ">=5.5,<6.1"`. Provides panel and touch initialization, brightness control, and microSD support.
 - **Revision measured on the board (smoke 1, 2026-11-23) : V2** — `CO5300 + CST816/CST820`. I2C probe : `CST816=0x15` answers, `FT3168=0x38` absent, serial log « board revision: V2 (CO5300 + CST816/CST820) ».
+
+DryDock initializes the panel and touch through the BSP, then registers the display with `lvgl_port_add_disp()` for QSPI. The BSP's `bsp_display_start()` uses the parallel RGB path, which can release LVGL's draw buffer before the QSPI transfer completes and produce horizontal bands. The SPI path releases the buffer on DMA completion. Its 40-row RGB565 buffer (29,440 bytes) fits in one ESP32-S3 SPI DMA transfer.
 
 ## Onboard peripherals
 

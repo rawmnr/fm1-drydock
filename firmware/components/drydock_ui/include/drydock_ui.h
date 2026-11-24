@@ -6,9 +6,9 @@
  * Done & Reboot), USB Diag (VBUS, host lib, VID:PID), and a status bar
  * (DRYDOCK, AXP2101 battery, USB state, free space).
  *
- * Call after bsp_display_start(): builds the screens and starts the refresh
- * task. In DEVICE_PC_SYNC mode the VFS isn't mounted: only the PC Sync screen
- * is shown (no manifest reading).
+ * Call with the LVGL lock held after display setup. Builds the screens and starts
+ * the refresh task. In DEVICE_PC_SYNC mode only the PC Sync screen is shown
+ * because the VFS isn't mounted.
  */
 #pragma once
 
