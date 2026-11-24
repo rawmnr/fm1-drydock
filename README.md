@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="FM1-Drydock — Standalone ESP32-S3 AMOLED firmware loader for the M-VAVE FM-1" width="1000">
+  <img src="assets/banner.jpg" alt="FM1-Drydock — Standalone ESP32-S3 AMOLED firmware loader for the M-VAVE FM-1" width="1000">
 </p>
 
 # FM1-Drydock
