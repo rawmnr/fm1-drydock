@@ -1,0 +1,32 @@
+name: Restore binary banner
+
+on:
+  push:
+    branches: [main]
+    paths: ['assets/banner.jpg.b64']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: restore-banner
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode banner and verify integrity
+        run: |
+          base64 -d assets/banner.jpg.b64 > assets/banner.jpg
+          echo "2abce6ae1302894db2adbb0348dfb5059e8f5c1249dcf3fd61ae92d2c7d9188c  assets/banner.jpg" | sha256sum -c
+          rm assets/banner.jpg.b64
+          rm .github/workflows/restore-banner.yml
+      - name: Commit restored banner
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: restore binary assets/banner.jpg from base64"
+          git push
