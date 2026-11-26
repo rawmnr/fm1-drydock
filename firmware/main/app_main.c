@@ -88,6 +88,9 @@ static void session_log_start(void)
     if (s_session_log != NULL) {
         setvbuf(s_session_log, NULL, _IONBF, 0);
         s_prev_vlog = esp_log_set_vprintf(session_vlog);
+        /* capture the USB host stack's internal diagnostics (HCD, hub):
+         * the normal INFO level produces nothing on a silent port */
+        esp_log_level_set("*", ESP_LOG_VERBOSE);
         ESP_LOGI(TAG, "session log: /drydock/log/session.txt");
     }
 }
@@ -260,7 +263,7 @@ static int console_cmd_host(int argc, char **argv)
     return 0;
 }
 
-static void console_start(void)
+static void __attribute__((unused)) console_start(void)
 {
     esp_console_repl_t *repl = NULL;
     esp_console_repl_config_t repl_cfg = ESP_CONSOLE_REPL_CONFIG_DEFAULT();
@@ -399,7 +402,12 @@ void app_main(void)
 
     probe_sdcard();
     session_log_start();
-    console_start();
+    /* No esp_console REPL in HOST_FLASH: the USB-Serial-JTAG console shares
+     * the USB pads with the usb host, and the REPL's active RX polling kept
+     * the USJ peripheral alive after usb_host took the PHY — no FM-1
+     * connection event ever reached the host as long as it ran (the
+     * pc_sync/host commands stay available on the touch UI and the session
+     * log carries the boot diagnostics). */
 
     /* USB Host engines: MIDI M-UPGRADE (flash) + Rescue UBOOT1.00 (SCSI). */
     ESP_ERROR_CHECK(drydock_midi_init(NULL));
