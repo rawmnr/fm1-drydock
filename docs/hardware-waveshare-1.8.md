@@ -74,7 +74,25 @@ Ported from fm1-flip's StickS3 guide (user-confirmed failures on their hardware)
 | Active cable (e.g. Meta Quest Link) | never works | its electronics need power from the USB host, which the board does not provide |
 | Some ordinary-looking data cables | can fail silently | first reflex when the FM-1 is on with its screen lit but stays undetected: **try another cable** |
 
-### Left-over download mode
+### Serial console pitfall : opening COMx forces download mode
+
+The ESP32-S3's USB-Serial-JTAG implements the auto-download circuit *in
+silicon* : opening the serial port from the PC (esptool mappings, .NET
+serial, IDE monitors) toggles DTR/RTS in a pattern that **resets the chip
+and re-latches the strapping into ROM download mode** (`rst:0x15
+(USB_UART_CHIP_RESET), boot:0x23 (DOWNLOAD)`). Rules learned the hard way :
+
+- Never open/​probe COM6 to "check" the board while it should be running an
+  app — every open silently reboots it into the ROM bootloader (black
+  screen, silent, `4C:COM port present but mute`).
+- Leave the port alone during FM-1 sessions anyway (the host owns the PHY).
+- To observe a boot : unplug the PC cable, power on battery, watch the
+  screen ; read back logs via PC Sync (`/drydock/log/session.txt`).
+- Every esptool run ends with `--after` state : `no_reset` leaves the chip
+  "Staying in bootloader" — always finish with `hard_reset`, and unplug the
+  cable before expecting an app boot.
+
+### Left-over download mode (FM-1)
 
 An FM-1 left in download mode by an interrupted session (cable pulled mid-flash) **drives its USB lines** instead of connecting; switching it off and on (normal screen back) clears it. `drydock_usb_probe` classifies this state as `unstable` and the USB Diag screen shows the hint.
 
