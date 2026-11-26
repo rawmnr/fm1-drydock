@@ -42,6 +42,11 @@ esp_err_t drydock_midi_init(const drydock_midi_callbacks_t *cb);
  *  starts. */
 esp_err_t drydock_midi_flash(const char *path);
 
+/** Cancels the flash in progress (serving stops at the next protocol
+ *  step) and drops a queued flash that has not started. The FM-1 may be
+ *  left mid-update; re-flash to restore a consistent state. */
+void drydock_midi_abort(void);
+
 /** Sends the bootloader key (F0 22 24 35 7D F7): the FM-1 switches to
  *  UBOOT1.00 (MSC) for a rescue. */
 esp_err_t drydock_midi_send_enter_bootloader(void);

@@ -313,6 +313,12 @@ static const drydock_usb_driver_t s_driver = {
     .detach = detach_fm1,
 };
 
+void drydock_midi_abort(void)
+{
+    s_abort = 1;         /* serving stops at the next boundary */
+    s_flash_pending = 0; /* a queued flash not yet started is dropped */
+}
+
 const drydock_usb_driver_t *drydock_midi_driver(void)
 {
     return &s_driver;
@@ -524,6 +530,7 @@ esp_err_t drydock_midi_flash(const char *path)
     }
     snprintf(s_flash_path, sizeof(s_flash_path), "%s", path);
     s_flash_pending = 1;
+    s_abort = 0; /* a new request revives the engine after an abort */
     s_error[0] = '\0';
     return ESP_OK;
 }

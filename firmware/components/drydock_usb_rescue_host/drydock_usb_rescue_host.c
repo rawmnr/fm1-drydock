@@ -3,10 +3,13 @@
  */
 #include "drydock_usb_rescue_host.h"
 
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
+#include "drydock_usb_midi_host.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -15,6 +18,7 @@
 #include "freertos/task.h"
 #include "fwsc.h"
 #include "jielib.h"
+#include "mbedtls/sha256.h"
 
 #define JL_LOADER_PATH "/drydock/rescue/jl_flash_helper.bin"
 
@@ -53,6 +57,8 @@ static drydock_rescue_callbacks_t s_cb;
 static SemaphoreHandle_t s_xfer_done;
 static usb_transfer_t *s_xfer;
 static volatile int s_xfer_status;
+static volatile int s_op_running;   /* backup/restore task active */
+static volatile int s_abort_op;    /* stop request, honored at sector boundaries */
 
 /* ---- BOT transport ---- */
 
@@ -517,6 +523,10 @@ static esp_err_t load_app_area(const char *fwsc_path, uint8_t **app_out, uint32_
 esp_err_t drydock_rescue_check(const char *fwsc_path, drydock_rescue_info_t *out)
 {
     memset(out, 0, sizeof(*out));
+    if (s_op_running) {
+        set_error("backup/restore in progress");
+        return ESP_ERR_INVALID_STATE;
+    }
     if (!s_attached) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -577,8 +587,87 @@ esp_err_t drydock_rescue_check(const char *fwsc_path, drydock_rescue_info_t *out
     return ESP_OK;
 }
 
+/* Sector-diff write of an app blob to [APP_LO, APP_HI): only the sectors
+ * that differ are erased, written (256-byte chunks) and re-read; then a
+ * full verification pass. Honors drydock_rescue_abort() at sector
+ * boundaries. Returns 0, or -1 with s_error set. run_app is called by the
+ * caller once every path succeeded. */
+static int flash_app_blob(const uint8_t *app, uint32_t app_len, const char *label)
+{
+    uint8_t cur[SEC];
+    uint8_t want[SEC];
+    uint32_t n_todo = 0;
+    for (uint32_t s = APP_LO; s < APP_HI; s += SEC) {
+        if (bl_flash_read(s, cur, SEC) == 0 &&
+            memcmp(cur, app + (s - APP_LO), SEC) != 0) {
+            n_todo++;
+        }
+    }
+    if (n_todo == 0) {
+        ESP_LOGI(TAG, "nothing to write: the FM-1 already has this firmware");
+        return 0;
+    }
+    ESP_LOGI(TAG, "%u sectors to write (%s)", (unsigned)n_todo, label);
+
+    uint32_t done = 0;
+    for (uint32_t s = APP_LO; s < APP_HI; s += SEC) {
+        if (s_abort_op) {
+            set_error("aborted at sector boundary (app region partially updated)");
+            return -1;
+        }
+        if (bl_flash_read(s, cur, SEC) == 0 &&
+            memcmp(cur, app + (s - APP_LO), SEC) == 0) {
+            continue;
+        }
+        memcpy(want, app + (s - APP_LO), SEC);
+        int ok = 0;
+        for (int try_ = 0; try_ < 3 && !ok; try_++) {
+            if (bl_flash_erase(s) != 0) {
+                continue;
+            }
+            int w_ok = 1;
+            for (size_t o = 0; o < SEC; o += CH) {
+                if (bl_flash_write(s + (uint32_t)o, want + o, CH) != 0) {
+                    w_ok = 0;
+                    break;
+                }
+            }
+            if (w_ok && bl_flash_read(s, cur, SEC) == 0 &&
+                memcmp(cur, want, SEC) == 0) {
+                ok = 1;
+            }
+        }
+        if (!ok) {
+            set_error("sector not re-read as expected (retry possible)");
+            return -1;
+        }
+        done++;
+        if (s_cb.on_progress) {
+            s_cb.on_progress((int)done, (int)n_todo, "write");
+        }
+    }
+
+    /* full final verification */
+    int bad = 0;
+    for (uint32_t s = APP_LO; s < APP_HI && !bad; s += SEC) {
+        if (bl_flash_read(s, cur, SEC) == 0 &&
+            memcmp(cur, app + (s - APP_LO), SEC) != 0) {
+            bad = 1;
+        }
+    }
+    if (bad) {
+        set_error("final verification failed");
+        return -1;
+    }
+    return 0;
+}
+
 esp_err_t drydock_rescue_flash(const char *fwsc_path, int confirm)
 {
+    if (s_op_running) {
+        set_error("backup/restore in progress");
+        return ESP_ERR_INVALID_STATE;
+    }
     if (!s_attached) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -616,73 +705,409 @@ esp_err_t drydock_rescue_flash(const char *fwsc_path, int confirm)
     }
     ESP_LOGI(TAG, "chip key 0x%04X, packet %s validated", key, product);
 
-    /* sectors to write: only those that differ */
-    uint8_t cur[SEC];
-    uint8_t want[SEC];
-    uint32_t n_todo = 0;
-    for (uint32_t s = APP_LO; s < APP_HI; s += SEC) {
-        if (bl_flash_read(s, cur, SEC) == 0 &&
-            memcmp(cur, app + (s - APP_LO), SEC) != 0) {
-            n_todo++;
-        }
-    }
-    if (n_todo == 0) {
-        ESP_LOGI(TAG, "nothing to write: the FM-1 already has this firmware");
+    if (flash_app_blob(app, app_len, product) != 0) {
         free(app);
-        bl_run_app();
-        return ESP_OK;
-    }
-    ESP_LOGI(TAG, "%u sectors to write", (unsigned)n_todo);
-
-    uint32_t done = 0;
-    for (uint32_t s = APP_LO; s < APP_HI; s += SEC) {
-        if (bl_flash_read(s, cur, SEC) == 0 &&
-            memcmp(cur, app + (s - APP_LO), SEC) == 0) {
-            continue;
-        }
-        memcpy(want, app + (s - APP_LO), SEC);
-        int ok = 0;
-        for (int try_ = 0; try_ < 3 && !ok; try_++) {
-            if (bl_flash_erase(s) != 0) {
-                continue;
-            }
-            int w_ok = 1;
-            for (size_t o = 0; o < SEC; o += CH) {
-                if (bl_flash_write(s + (uint32_t)o, want + o, CH) != 0) {
-                    w_ok = 0;
-                    break;
-                }
-            }
-            if (w_ok && bl_flash_read(s, cur, SEC) == 0 &&
-                memcmp(cur, want, SEC) == 0) {
-                ok = 1;
-            }
-        }
-        if (!ok) {
-            set_error("sector not re-read as expected (retry possible)");
-            free(app);
-            return ESP_FAIL;
-        }
-        done++;
-        if (s_cb.on_progress) {
-            s_cb.on_progress((int)done, (int)n_todo, "write");
-        }
-    }
-
-    /* full final verification */
-    int bad = 0;
-    for (uint32_t s = APP_LO; s < APP_HI && !bad; s += SEC) {
-        if (bl_flash_read(s, cur, SEC) == 0 &&
-            memcmp(cur, app + (s - APP_LO), SEC) != 0) {
-            bad = 1;
-        }
-    }
-    free(app);
-    if (bad) {
-        set_error("final verification failed");
         return ESP_FAIL;
     }
+    free(app);
     bl_run_app();
     ESP_LOGI(TAG, "flash complete, %s launched", product);
     return ESP_OK;
+}
+
+/* ---- backups (fm1-flip parity) ---- */
+
+/* Backup file layout: 64-byte header then the raw app-region bytes.
+ * The header carries the device chip key so a restore can refuse an image
+ * saved from another FM-1, and the SHA-256 of the blob for storage
+ * integrity (the file is re-read and re-hashed after writing). */
+#define DRYBAK_HDR 64u
+static const char DRYBAK_MAGIC[8] = { 'D', 'R', 'Y', 'B', 'A', 'K', 'v', '1' };
+
+typedef struct {
+    char magic[8];
+    uint16_t chip_key;   /* little endian */
+    uint16_t rsv0;
+    uint32_t app_len;    /* little endian */
+    uint8_t sha256[32];
+    uint8_t rsv[16];
+} drybak_hdr_t;          /* sizeof == DRYBAK_HDR */
+
+_Static_assert(sizeof(drybak_hdr_t) == DRYBAK_HDR, "backup header size");
+
+/* First free backup-N.drybak in dir (N = highest existing + 1, no reuse:
+ * interrupted backups never leave a file here, the name is built before
+ * opening and the file is created with fopen). */
+static int next_backup_index(const char *dir)
+{
+    int max = -1;
+    DIR *d = opendir(dir);
+    if (d == NULL) {
+        return 0;
+    }
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        int n = -1;
+        if (sscanf(ent->d_name, "backup-%d.drybak", &n) == 1 && n > max) {
+            max = n;
+        }
+    }
+    closedir(d);
+    return max + 1;
+}
+
+/* Reads the app region, streams it to path, then re-reads and re-hashes
+ * the file. Nothing is written on the FM-1. Returns 0 (chip_key, sha256
+ * filled) or -1 with s_error set. */
+static int write_backup_file(const char *path, uint16_t chip_key)
+{
+    const uint32_t app_len = APP_HI - APP_LO;
+    FILE *f = fopen(path, "wb");
+    if (f == NULL) {
+        set_error("cannot create backup file (mounted? space?)");
+        return -1;
+    }
+    uint8_t hdr_buf[DRYBAK_HDR] = { 0 };
+    if (fwrite(hdr_buf, 1, DRYBAK_HDR, f) != DRYBAK_HDR) { /* placeholder */
+        fclose(f);
+        remove(path);
+        set_error("backup write failed");
+        return -1;
+    }
+    mbedtls_sha256_context sha;
+    mbedtls_sha256_init(&sha);
+    mbedtls_sha256_starts(&sha, 0);
+    uint8_t cur[SEC];
+    const uint32_t total_sec = app_len / SEC;
+    uint32_t done = 0;
+    int failed = 0;
+    for (uint32_t s = APP_LO; s < APP_HI && !failed; s += SEC) {
+        if (s_abort_op) {
+            set_error("aborted: file removed, FM-1 untouched");
+            failed = 1;
+            break;
+        }
+        if (bl_flash_read(s, cur, SEC) != 0) {
+            set_error("FM-1 flash read failed");
+            failed = 1;
+            break;
+        }
+        mbedtls_sha256_update(&sha, cur, SEC);
+        if (fwrite(cur, 1, SEC, f) != SEC) {
+            set_error("backup write failed (space?)");
+            failed = 1;
+            break;
+        }
+        done++;
+        if (s_cb.on_progress) {
+            s_cb.on_progress((int)done, (int)total_sec, "backup");
+        }
+    }
+    uint8_t hash[32];
+    mbedtls_sha256_finish(&sha, hash);
+    mbedtls_sha256_free(&sha);
+    if (failed) {
+        fclose(f);
+        remove(path);
+        return -1;
+    }
+
+    drybak_hdr_t hdr;
+    memset(&hdr, 0, sizeof hdr);
+    memcpy(hdr.magic, DRYBAK_MAGIC, 8);
+    hdr.chip_key = chip_key;
+    hdr.app_len = app_len;
+    memcpy(hdr.sha256, hash, 32);
+    if (fseek(f, 0, SEEK_SET) != 0 ||
+        fwrite(&hdr, 1, DRYBAK_HDR, f) != DRYBAK_HDR) {
+        fclose(f);
+        remove(path);
+        set_error("backup header write failed");
+        return -1;
+    }
+    fclose(f);
+
+    /* re-read the file and re-hash it: proves the stored image */
+    f = fopen(path, "rb");
+    if (f == NULL) {
+        set_error("backup file unreadable after write");
+        return -1;
+    }
+    mbedtls_sha256_init(&sha);
+    mbedtls_sha256_starts(&sha, 0);
+    uint8_t buf[SEC];
+    uint32_t left = app_len;
+    while (left > 0 && !failed) {
+        const size_t take = left < sizeof(buf) ? left : sizeof(buf);
+        const size_t got = fread(buf, 1, take, f);
+        if (got != take) {
+            set_error("backup file shorter than expected");
+            failed = 1;
+            break;
+        }
+        mbedtls_sha256_update(&sha, buf, take);
+        left -= (uint32_t)take;
+    }
+    mbedtls_sha256_finish(&sha, hash);
+    mbedtls_sha256_free(&sha);
+    fclose(f);
+    if (failed) {
+        remove(path);
+        return -1;
+    }
+    if (memcmp(hash, hdr.sha256, 32) != 0) {
+        remove(path);
+        set_error("backup verification failed (hash mismatch)");
+        return -1;
+    }
+    return 0;
+}
+
+/* Loads a backup into PSRAM, validates header + SHA-256 + key match.
+ * Returns 0 with *app_out (PSRAM, caller frees), *app_len, *chip_key. */
+static int load_backup_file(const char *path, uint8_t **app_out, uint32_t *app_len,
+                            uint16_t *chip_key, uint8_t sha_out[32])
+{
+    FILE *f = fopen(path, "rb");
+    if (f == NULL) {
+        set_error("backup file not found");
+        return -1;
+    }
+    drybak_hdr_t hdr;
+    if (fread(&hdr, 1, sizeof hdr, f) != sizeof hdr) {
+        fclose(f);
+        set_error("backup file too short");
+        return -1;
+    }
+    if (memcmp(hdr.magic, DRYBAK_MAGIC, 8) != 0) {
+        fclose(f);
+        set_error("not a drybak backup");
+        return -1;
+    }
+    if (hdr.app_len != APP_HI - APP_LO) {
+        fclose(f);
+        set_error("backup app region size mismatch");
+        return -1;
+    }
+    uint8_t *app = heap_caps_malloc(hdr.app_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (app == NULL) {
+        fclose(f);
+        set_error("not enough PSRAM");
+        return -1;
+    }
+    mbedtls_sha256_context sha;
+    mbedtls_sha256_init(&sha);
+    mbedtls_sha256_starts(&sha, 0);
+    uint8_t *p = app;
+    uint32_t left = hdr.app_len;
+    int failed = 0;
+    while (left > 0 && !failed) {
+        const size_t take = left < SEC ? left : SEC;
+        if (fread(p, 1, take, f) != take) {
+            set_error("backup file truncated");
+            failed = 1;
+            break;
+        }
+        mbedtls_sha256_update(&sha, p, take);
+        p += take;
+        left -= (uint32_t)take;
+    }
+    uint8_t hash[32];
+    mbedtls_sha256_finish(&sha, hash);
+    mbedtls_sha256_free(&sha);
+    fclose(f);
+    if (failed) {
+        free(app);
+        return -1;
+    }
+    if (memcmp(hash, hdr.sha256, 32) != 0) {
+        free(app);
+        set_error("backup hash mismatch (corrupted file?)");
+        return -1;
+    }
+    *app_out = app;
+    *app_len = hdr.app_len;
+    *chip_key = hdr.chip_key;
+    if (sha_out != NULL) {
+        memcpy(sha_out, hdr.sha256, 32);
+    }
+    return 0;
+}
+
+/* Waits for a UBOOT1.00 device, asking a running FM-1 to enter the
+ * bootloader itself (fm1-flip's "connects automatically" UX). */
+static int ensure_uboot_attached(void)
+{
+    if (s_attached) {
+        return 0;
+    }
+    if (drydock_midi_connected()) {
+        if (drydock_midi_send_enter_bootloader() == ESP_OK) {
+            ESP_LOGI(TAG, "UBOOT key sent over MIDI, waiting for UBOOT1.00…");
+        }
+    }
+    const int steps = 120; /* 12 s, 100 ms each */
+    for (int i = 0; i < steps; i++) {
+        if (s_abort_op) {
+            set_error("aborted before connection");
+            return -1;
+        }
+        if (s_attached) {
+            return 0;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    set_error("FM-1 not in UBOOT mode (switch it on, data cable)");
+    return -1;
+}
+
+/* Verifies the attached device is really a WL82 UBOOT1.00 (the driver match
+ * is class-based). Fills chip_key and loads the helper when needed. */
+static int prepare_rescue_session(uint16_t *chip_key)
+{
+    char vendor[9];
+    char model[17];
+    if (inquiry(vendor, sizeof vendor, model, sizeof model) != 0 ||
+        strcmp(vendor, "WL82") != 0 || strcmp(model, "UBOOT1.00") != 0) {
+        set_error("not an UBOOT1.00 (WL82)");
+        return -1;
+    }
+    if (helper_ensure_loaded() != 0) {
+        return -1; /* error already set */
+    }
+    if (read_chip_key(chip_key) != 0) {
+        set_error("chip key unreadable");
+        return -1;
+    }
+    return 0;
+}
+
+static void task_done(int ok, const char *detail)
+{
+    s_op_running = 0;
+    if (s_cb.on_done) {
+        s_cb.on_done(ok, ok == 0 ? detail : s_error);
+    }
+}
+
+static char s_backup_dir[64];
+
+static void backup_task(void *arg)
+{
+    (void)arg;
+    uint16_t key = 0;
+    if (ensure_uboot_attached() != 0 || prepare_rescue_session(&key) != 0) {
+        task_done(-1, NULL);
+        vTaskDelete(NULL);
+        return;
+    }
+    mkdir(s_backup_dir, 0775); /* existing dir: -EEXIST, ignored */
+
+    char path[96];
+    snprintf(path, sizeof(path), "%s/backup-%d.drybak", s_backup_dir,
+             next_backup_index(s_backup_dir));
+    if (write_backup_file(path, key) != 0) {
+        task_done(-1, NULL);
+        vTaskDelete(NULL);
+        return;
+    }
+    ESP_LOGI(TAG, "backup complete: %s", path);
+    task_done(0, path);
+    vTaskDelete(NULL);
+}
+
+static void restore_task(void *arg)
+{
+    char *path = (char *)arg;
+    uint16_t dev_key = 0;
+    uint16_t bak_key = 0;
+    uint8_t *app = NULL;
+    uint32_t app_len = 0;
+
+    int rc = -1;
+    do {
+        if (ensure_uboot_attached() != 0 || prepare_rescue_session(&dev_key) != 0) {
+            break;
+        }
+        if (load_backup_file(path, &app, &app_len, &bak_key, NULL) != 0) {
+            break;
+        }
+        if (bak_key != dev_key) {
+            set_error("backup from another FM-1 (chip key mismatch)");
+            break;
+        }
+
+        /* fresh rollback backup before any write (fm1-flip parity) */
+        mkdir(s_backup_dir, 0775);
+        char rollback[96];
+        snprintf(rollback, sizeof(rollback), "%s/backup-%d.drybak", s_backup_dir,
+                 next_backup_index(s_backup_dir));
+        if (write_backup_file(rollback, dev_key) != 0) {
+            set_error("rollback backup failed, restore refused");
+            break;
+        }
+
+        rc = flash_app_blob(app, app_len, "restore");
+    } while (0);
+
+    if (app != NULL) {
+        free(app);
+    }
+    if (rc != 0) {
+        task_done(-1, NULL);
+    } else {
+        bl_run_app();
+        ESP_LOGI(TAG, "restore complete: %s", path);
+        task_done(0, path);
+    }
+    vTaskDelete(NULL);
+}
+
+esp_err_t drydock_rescue_backup(const char *dest_dir)
+{
+    if (s_op_running) {
+        set_error("an operation is already running");
+        return ESP_ERR_INVALID_STATE;
+    }
+    snprintf(s_backup_dir, sizeof(s_backup_dir), "%s",
+             dest_dir != NULL ? dest_dir : "/drydock/backups");
+    s_abort_op = 0;
+    s_op_running = 1;
+    if (xTaskCreate(backup_task, "rescue_backup", 8192, NULL, 5, NULL) != pdPASS) {
+        s_op_running = 0;
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+esp_err_t drydock_rescue_restore(const char *path, int confirm)
+{
+    if (s_op_running) {
+        set_error("an operation is already running");
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (path == NULL || !confirm) {
+        set_error("confirmation required");
+        return ESP_ERR_INVALID_STATE;
+    }
+    /* copies the path: the UI label is static but keep it robust */
+    static char p[96];
+    snprintf(p, sizeof(p), "/drydock/%s", path);
+    s_abort_op = 0;
+    s_op_running = 1;
+    if (xTaskCreate(restore_task, "rescue_restore", 8192, p, 5, NULL) != pdPASS) {
+        s_op_running = 0;
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+void drydock_rescue_abort(void)
+{
+    s_abort_op = 1;
+}
+
+int drydock_rescue_busy(void)
+{
+    return s_op_running;
 }
