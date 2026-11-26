@@ -53,4 +53,31 @@ SDMMC 1 bit, CS driven by the TCA9554 (EXIO7), FAT32 format. The BSP mounts the 
 ## USB-C : Device vs Host
 
 - Device : measured TinyUSB enumeration (JTAG/CDC). The PC Sync (MSC) mode relies on it.
-- Host : the same port must switch to Host (usb_host_lib) to drive the FM-1. [To verify Phase 0] VBUS power supply in standalone (without PC connected) and a suitable USB-C cable. This is the riskiest point of Phase 0 ; to validate before committing to Phase 2.
+- Host : the same port must switch to Host (usb_host_lib) to drive the FM-1. The board must run on its own battery in this mode (its single USB-C port faces the FM-1).
+
+### VBUS : the FM-1 powers itself, the board must not source VBUS
+
+Cross-project evidence ([fm1-flip](https://github.com/chrisdiana/fm1-flip), M5Stack StickS3, `docs/HARDWARE-VALIDATION.md` and `docs/STICKS3.md`) resolves the former "riskiest point of Phase 0" :
+
+- The host board **does not need to supply VBUS**. The StickS3 does not source power on its USB-C port at all, and a user-confirmed real connection to an FM-1 (running Patchwerk) works over a direct C-to-C cable.
+- The FM-1 runs **on its own battery** in that scenario. A battery too low to run its USB looks exactly like "no device" on the host side — an FM-1 that stays undetected must be charged first.
+- Neither board nor FM-1 provides VBUS on a C-to-C cable (both are CC pull-down sinks); both sides self-powered is the supported arrangement.
+
+### Cables : passive USB-C data cable required
+
+Ported from fm1-flip's StickS3 guide (user-confirmed failures on their hardware) :
+
+| Cable | Result | Why |
+|---|---|---|
+| Plain passive USB-C data cable | **works** | data lines wired through |
+| Charge-only cable | never works | no data wires at all |
+| Active cable (e.g. Meta Quest Link) | never works | its electronics need power from the USB host, which the board does not provide |
+| Some ordinary-looking data cables | can fail silently | first reflex when the FM-1 is on with its screen lit but stays undetected: **try another cable** |
+
+### Left-over download mode
+
+An FM-1 left in download mode by an interrupted session (cable pulled mid-flash) **drives its USB lines** instead of connecting; switching it off and on (normal screen back) clears it. `drydock_usb_probe` classifies this state as `unstable` and the USB Diag screen shows the hint.
+
+### Bus presence probe (`drydock_usb_probe`)
+
+Before `drydock_usb_host_start()` takes the PHY, `drydock_usb_bus_probe()` samples D+/D- (GPIO19/20) for ~100 ms with only weak internal pull-downs (~45 kOhm) and classifies the bus : `device` (steady 1.5 kOhm pull-up), `empty` (no device / FM-1 off / battery too low / charge-only cable), `unstable` (FM-1 in download mode or browning out), `fault` (both lines high : cable short). The classification and thresholds are ported from fm1-flip's `src/transport/usb_bus.cpp`; the result is logged at boot and shown on the USB Diag screen with an actionable hint.

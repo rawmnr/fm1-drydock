@@ -37,9 +37,7 @@ Rules followed : zero writes on the FM-1, atomic commits per milestone.
 - ~~No Windows C host compiler~~ → resolved : **zig cc** (pip `ziglang`)
   compiles the C protocol and the **10 bit-for-bit tests pass locally**
   (M-UPGRADE framing, JieLi ciphers, SCSI CDB, chip key, `.fwsc` extractor).
-- **VBUS Host** : the FM-1 must be powered by the board in Host mode
-  (risky point Phase 0, `docs/hardware-waveshare-1.8.md`) — to validate at the
-  next HIL.
+- **VBUS Host — resolved by cross-project evidence (fm1-flip)** : the host board does **not** need to supply VBUS. The FM-1 runs on its own battery over a direct C-to-C cable (user-confirmed on a StickS3, see `docs/hardware-waveshare-1.8.md`). Requirements instead : a **plain passive USB-C data cable** (charge-only and active cables never work), the FM-1 **on with its screen lit**, charged battery (a low battery stops its USB). A **bus presence probe** (`drydock_usb_probe`, ported from fm1-flip) now classifies the port at boot (`device` / `empty` / `unstable` / `fault` = charge-only cable or FM-1 off/brown-out/download-mode, cable short) and the USB Diag screen shows the actionable hint.
 - **MIDI flash untested on real hardware** : the protocol is ported bit-for-bit
   from the hub JS and verified by the host test, but the real execution on the
   FM-1 is waiting on the board unblocking.
@@ -68,8 +66,15 @@ Rules followed : zero writes on the FM-1, atomic commits per milestone.
      `drydock verify` (already validated, replay to confirm) ;
    - eject the volume : the board must **return by itself to HOST_FLASH** (~4 s)
      thanks to the `is_exposed` fix ; check the « USB host left » log.
-5. **USB Host (battery required or 5 V on the port)** : unplug the board from
-   the PC, connect the **FM-1 to the board USB-C** (USB-C ↔ USB-C cable).
+5. **USB Host (board on its battery, FM-1 on its own battery)** : unplug the board from
+   the PC, connect the **FM-1 to the board USB-C with a plain passive USB-C
+   data cable** (charge-only and active cables never work; if the FM-1 is on
+   with its screen lit but stays undetected, try another cable first). The FM-1
+   must be ON and charged — a low battery stops its USB.
+   - At boot the log shows `dry_probe: USB bus probe: ...`; the USB Diag screen repeats
+     the classification + hint (`empty` = nothing/cable charge-only/FM-1 off,
+     `unstable` = FM-1 left in download mode → switch it off and on,
+     `fault` = cable short);
    - **USB Diag** screen : `FM-1 (MIDI)`, identity `FM-1_xxx` read ;
    - flash a vessel from the UI (FLASH button) : progress, final status ;
    - **Rescue** : Enter Bootloader button → the FM-1 switches to `UBOOT1.00`,

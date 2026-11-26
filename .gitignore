@@ -17,3 +17,6 @@ __pycache__/
 
 # audit trail (local run records, not source)
 .audit/
+
+# local study/working files
+.scratchpad/
