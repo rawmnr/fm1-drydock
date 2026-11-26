@@ -18,6 +18,7 @@
 #include "drydock_storage.h"
 #include "drydock_usb_midi_host.h"
 #include "drydock_usb_msc_device.h"
+#include "drydock_usb_probe.h"
 #include "drydock_usb_rescue_host.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -569,15 +570,21 @@ static void refresh_task(void *arg)
         }
         refresh_status();
         if (s_diag_text) {
-            char txt[200];
+            char txt[320];
             const char *usb = drydock_rescue_connected() ? "UBOOT1.00 (MSC)"
                            : drydock_midi_connected() ? "FM-1 (MIDI)"
                                                        : "no FM-1";
+            const drydock_bus_probe_t bus = drydock_usb_bus_last_probe();
             snprintf(txt, sizeof(txt),
-                     "Mode: %s\nFM-1: %s\nIdentity: %s\nVBUS: %s\nusb_host_lib: active",
+                     "Mode: %s\nFM-1: %s\nIdentity: %s\nVBUS: %s\n"
+                     "Bus at boot: %s\n%s",
                      boot_mode_current() == BOOT_MODE_PC_SYNC ? "PC_SYNC" : "HOST_FLASH",
                      usb, drydock_midi_identity(),
-                     drydock_msc_host_connected() ? "on" : "off");
+                     drydock_msc_host_connected() ? "on" : "off",
+                     drydock_bus_presence_name(bus.presence),
+                     bus.presence == DRYDOCK_BUS_DEVICE
+                         ? "usb_host_lib: active"
+                         : drydock_bus_presence_hint(bus.presence));
             lv_label_set_text(s_diag_text, txt);
         }
         if (s_sync_status) {

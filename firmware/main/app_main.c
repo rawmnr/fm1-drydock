@@ -15,6 +15,7 @@
 #include "drydock_storage.h"
 #include "drydock_ui.h"
 #include "drydock_usb_host.h"
+#include "drydock_usb_probe.h"
 #include "drydock_usb_midi_host.h"
 #include "drydock_usb_msc_device.h"
 #include "drydock_usb_rescue_host.h"
@@ -156,9 +157,19 @@ static void probe_sdcard(void)
     /* stays mounted: flashing reads packets from /drydock at runtime */
 }
 
-/* USB Host engines (MIDI M-UPGRADE + Rescue UBOOT1.00) on the FM-1. */
+/* USB Host engines (MIDI M-UPGRADE + Rescue UBOOT1.00) on the FM-1.
+ * The electrical probe runs first, while the pads are still free: it tells
+ * why the FM-1 does not show up (charge-only cable, FM-1 off / battery low,
+ * FM-1 left in download mode, shorted cable) before enumeration is tried. */
 static void usb_host_start(void)
 {
+    drydock_bus_probe_t probe;
+    if (drydock_usb_bus_probe(&probe) == ESP_OK &&
+        probe.presence != DRYDOCK_BUS_DEVICE) {
+        ESP_LOGW(TAG, "USB bus: %s — %s",
+                 drydock_bus_presence_name(probe.presence),
+                 drydock_bus_presence_hint(probe.presence));
+    }
     const drydock_usb_driver_t drivers[] = {
         *drydock_midi_driver(),
         *drydock_rescue_driver(),
