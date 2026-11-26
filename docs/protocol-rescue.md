@@ -68,3 +68,29 @@ A packet only applies if its app zone decrypts with this key (`sfc` + CRC16 of t
 3. Each written sector is reread. Failure = stop, resumable at the next run.
 4. Keep a read-only mode (`--check` equivalent) : read, compare, write nothing.
 5. Require explicit confirmation before writing.
+
+## Backups (`.drybak`, fm1-flip parity)
+
+The board stores full app-region images of the FM-1 — the safety net the
+product was missing (a flash interrupted before completion can be rolled
+back without a PC).
+
+- File : `/drydock/backups/backup-<n>.drybak` on the internal FAT. A PC Sync
+  copies them like any other file ; the syncer never deletes this folder.
+- Header (64 bytes, little endian) : magic `DRYBAKv1`, chip key, `app_len`
+  (`0x8F000` = the whole app region `0x4000..0x92FFF`), SHA-256 of the blob.
+- Creation (`drydock_rescue_backup`, asynchronous task) : connects via the
+  MIDI UBOOT key if the FM-1 runs its firmware, verifies WL82/UBOOT1.00 by
+  INQUIRY, loads the helper only when absent, reads the app region sector by
+  sector, streams it with the SHA-256, **then re-reads the file and re-hashes
+  it**. Nothing is written on the FM-1 — read-only operation.
+- Restore (`drydock_rescue_restore`, hold-confirmed 2 s on screen) : loads
+  and re-hashes the file, **refuses a chip key different from the device**
+  (an image from another FM-1 is not a license to write this one), creates a
+  fresh rollback backup first, then flashes only the app sectors that differ
+  via the usual sector path (never the header). `run_app` at the end.
+- Abort (`drydock_rescue_abort`) : stops at the next sector boundary. Abort
+  during a write leaves the app region partially updated (bootable head
+  intact) — re-run the restore to complete it.
+- Boot/calibration sectors are never part of a backup : only the app region
+  is dumped and restored.

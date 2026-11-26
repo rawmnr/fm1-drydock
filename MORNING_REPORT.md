@@ -83,6 +83,22 @@ Rules followed : zero writes on the FM-1, atomic commits per milestone.
 6. **Back to Stock V15** : « Back to Stock V15 » button → check the identity
    `FM-1_015` at reboot.
 
+## Morning additions (2026-11-25, fm1-flip feature parity)
+
+- **USB-C bus presence probe** (`drydock_usb_probe`, commit `4e006fa`) : pre-host
+  D+/D- classification `device`/`empty`/`unstable`/`fault` with actionable hints
+  (charge-only cable, FM-1 off, download-mode leftover, short) — boot log + USB Diag.
+- **FM-1 backups** (see `docs/protocol-rescue.md`) : full app-region image
+  (568 KiB) with SHA-256, created asynchronously via **Backups** on the home
+  screen, auto-connecting through the MIDI UBOOT key. Restore is **hold 2 s**
+  confirmed, refuses a chip-key mismatch and creates a fresh rollback backup
+  first. Copyable via PC Sync (`/drydock/backups/`, preserved by the syncer).
+- **Safety UX** : FLASH / Back to Stock / Restore need a **2-second hold**
+  (fm1-flip physical confirmation), Cancel buttons on the flash and backup
+  screens stop at the next step / sector boundary.
+- Feature comparison with fm1-flip and the declined items (Wi-Fi catalogue,
+  web UI, session logs) are in the run records.
+
 ## Technical notes
 
 - **New components** : `drydock_proto` (fwsc/jielib/upgrade, pure C host-tested),
