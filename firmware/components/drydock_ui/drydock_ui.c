@@ -873,14 +873,18 @@ static void refresh_task(void *arg)
             bak_list_rebuild();
         }
         if (s_diag_text) {
-            char txt[320];
+            char txt[512];
             const char *usb = drydock_rescue_connected() ? "UBOOT1.00 (MSC)"
                            : drydock_midi_connected() ? "FM-1 (MIDI)"
                                                        : "no FM-1";
             const drydock_bus_probe_t bus = drydock_usb_bus_last_probe();
-            snprintf(txt, sizeof(txt),
+            int jn = 0;
+            const char (*jmat)[72] = NULL;
+            (void)jmat;
+            const char *jr = drydock_usb_journal(&jn);
+            int off = snprintf(txt, sizeof(txt),
                      "Mode: %s\nFM-1: %s\nIdentity: %s\nVBUS: %s\n"
-                     "Bus at boot: %s\n%s",
+                     "Bus at boot: %s\n%s\nUSB journal:\n",
                      boot_mode_current() == BOOT_MODE_PC_SYNC ? "PC_SYNC" : "HOST_FLASH",
                      usb, drydock_midi_identity(),
                      drydock_msc_host_connected() ? "on" : "off",
@@ -888,6 +892,14 @@ static void refresh_task(void *arg)
                      bus.presence == DRYDOCK_BUS_DEVICE
                          ? "usb_host_lib: active"
                          : drydock_bus_presence_hint(bus.presence));
+            if (off > 0 && jr != NULL) {
+                /* journal lines are fixed-size, oldest first */
+                for (int i = 0; i < jn && off < (int)sizeof(txt) - 1; i++) {
+                    const char *line = jr + (size_t)i * 72;
+                    off += snprintf(txt + off, sizeof(txt) - (size_t)off,
+                                    "%.70s\n", line);
+                }
+            }
             lv_label_set_text(s_diag_text, txt);
         }
         if (s_sync_status) {
