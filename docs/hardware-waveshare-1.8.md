@@ -99,3 +99,17 @@ An FM-1 left in download mode by an interrupted session (cable pulled mid-flash)
 ### Bus presence probe (`drydock_usb_probe`)
 
 Before `drydock_usb_host_start()` takes the PHY, `drydock_usb_bus_probe()` samples D+/D- (GPIO19/20) for ~100 ms with only weak internal pull-downs (~45 kOhm) and classifies the bus : `device` (steady 1.5 kOhm pull-up), `empty` (no device / FM-1 off / battery too low / charge-only cable), `unstable` (FM-1 in download mode or browning out), `fault` (both lines high : cable short). The classification and thresholds are ported from fm1-flip's `src/transport/usb_bus.cpp`; the result is logged at boot and shown on the USB Diag screen with an actionable hint.
+
+### Verify the FM-1 identity without flashing it
+
+1. Disconnect the Waveshare from the PC. With both devices powered on by
+   their batteries, connect them with a passive USB-C data cable.
+2. Boot the Waveshare with the FM-1 already connected. Open **USB Diag**.
+3. Check that **Bus at boot** says `device`, the USB journal shows
+   `dev addr=1 VID=4D4A PID=4155` and `attached fm1-midi`, and **Identity**
+   shows the FM-1 firmware name. The bus probe reports electrical presence
+   only. Enumeration and the identity response are separate checks.
+
+If the identity is missing after attachment, switch to PC Sync and read
+`/drydock/log/session.txt`. Look for `dry_midi: state=connected` followed
+by the identity. Do not select **Flash** or **Enter Bootloader** for this check.

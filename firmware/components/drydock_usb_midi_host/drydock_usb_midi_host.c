@@ -1,9 +1,7 @@
 /* USB Host MIDI engine: FM-1 detection (VID_4D4A&PID_4155), SysEx MIDI
  * transport (USB MIDI event packets) and M-UPGRADE update protocol.
  *
- * The USB-MIDI transport splits each SysEx into 4-byte packets
- * [CIN<<4 | cable, d0, d1, d2]: CIN 0x4 start, 0x5 continue, 0x7 end.
- * The FM-1 sends its 0x30 requests as SysEx (framed F0..F7, see upgrade.c).
+ * USB-MIDI 1.0 puts the cable number above the CIN in each event header.
  */
 #include "drydock_usb_midi_host.h"
 
@@ -24,23 +22,18 @@
 #define MIDI_PID 0x4155
 
 #define MIDI_CABLE 0
-#define CIN_SYSEX_START 0x4
-#define CIN_SYSEX_CONT 0x5
-#define CIN_SYSEX_END 0x7
+#define CIN_SYSEX_START_CONT 0x4
+#define CIN_SYSEX_END_1 0x5
+#define CIN_SYSEX_END_3 0x7
 
-#define XFER_BUF_SIZE 512 /* >= MIDI MPS (64) and 2× packets */
+#define RX_XFER_SIZE 512
+#define TX_SYSEX_SIZE (2u + ((FW_UP_MAXDATA + 15u) * 8u + 6u) / 7u)
+#define TX_XFER_SIZE (((TX_SYSEX_SIZE + 2u) / 3u) * 4u)
 #define HS_TIMEOUT_MS 1200
 #define HS_TRIES 3
 
 static const char *TAG = "dry_midi";
 
-typedef struct {
-    usb_device_handle_t dev;
-    uint8_t ep_out;
-    uint8_t ep_in;
-} midi_dev_t;
-
-static midi_dev_t s_dev;
 static volatile int s_attached;
 static char s_identity[32];
 static char s_error[96];
@@ -99,73 +92,71 @@ static esp_err_t midi_send_sysex(const uint8_t *sysex, size_t len)
     if (!s_attached || s_xfer == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
-    uint8_t out[XFER_BUF_SIZE];
+    if (len == 0 || len > (s_xfer->data_buffer_size / 4) * 3) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    uint8_t *out = s_xfer->data_buffer;
     size_t o = 0;
     size_t i = 0;
     while (i < len) {
-        const size_t chunk = len - i > 3 ? 3 : len - i;
-        uint8_t cin;
-        if (i == 0) {
-            cin = CIN_SYSEX_START;
-        } else if (i + chunk == len) {
-            cin = CIN_SYSEX_END;
-        } else {
-            cin = CIN_SYSEX_CONT;
-        }
-        out[o++] = (uint8_t)((cin << 4) | MIDI_CABLE);
+        const size_t rem = len - i;
+        const size_t chunk = rem > 3 ? 3 : rem;
+        const uint8_t cin = rem > 3 ? CIN_SYSEX_START_CONT : CIN_SYSEX_START_CONT + chunk;
+        out[o++] = (uint8_t)((MIDI_CABLE << 4) | cin);
         out[o++] = sysex[i];
         out[o++] = i + 1 < len ? sysex[i + 1] : 0;
         out[o++] = i + 2 < len ? sysex[i + 2] : 0;
         i += chunk;
     }
-    s_xfer->device_handle = s_dev.dev;
-    s_xfer->bEndpointAddress = s_dev.ep_out;
     s_xfer->num_bytes = (int)o;
     s_xfer->timeout_ms = 1000;
-    memcpy(s_xfer->data_buffer, out, o);
-    ESP_RETURN_ON_ERROR(usb_host_transfer_submit(s_xfer), TAG, "submit OUT");
+    ESP_RETURN_ON_ERROR(drydock_usb_host_submit(drydock_midi_driver(), s_xfer, true),
+                        TAG, "submit OUT");
     return xfer_wait(2000);
 }
 
-/* Receives a complete SysEx (F0..F7): accumulates the 0x4/0x5/0x7 packets.
- * Returns 0 once a SysEx is reassembled (out/out_len), -1 otherwise (timeout). */
+/* Returns 0 when a complete SysEx has been reassembled, or -1 on timeout/error. */
 static int midi_recv_sysex(uint8_t *out, size_t out_cap, size_t *out_len, int timeout_ms)
 {
-    uint8_t acc[512];
     size_t n = 0;
     const uint32_t end = (uint32_t)(xTaskGetTickCount()) + pdMS_TO_TICKS(timeout_ms);
     while (xTaskGetTickCount() < end) {
         if (!s_attached || s_abort) {
             return -1;
         }
-        s_xfer->device_handle = s_dev.dev;
-        s_xfer->bEndpointAddress = s_dev.ep_in;
-        s_xfer->num_bytes = XFER_BUF_SIZE;
+        s_xfer->num_bytes = RX_XFER_SIZE;
         s_xfer->timeout_ms = 1000;
-        if (usb_host_transfer_submit(s_xfer) != ESP_OK) {
+        if (drydock_usb_host_submit(drydock_midi_driver(), s_xfer, false) != ESP_OK) {
             return -1;
         }
         if (xfer_wait(1500) != ESP_OK) {
             return -1; /* erreur ou timeout : on abandonne */
         }
         const int got = s_xfer->actual_num_bytes;
-        for (int i = 0; i + 3 < got && n < sizeof(acc); i += 4) {
+        for (int i = 0; i + 3 < got; i += 4) {
             const uint8_t hdr = s_xfer->data_buffer[i];
-            const uint8_t cin = hdr >> 4;
-            if (cin != CIN_SYSEX_START && cin != CIN_SYSEX_CONT && cin != CIN_SYSEX_END) {
-                continue; /* non-SysEx message: ignored */
+            const uint8_t cin = hdr & 0x0F;
+            if ((hdr >> 4) != MIDI_CABLE || cin < CIN_SYSEX_START_CONT || cin > CIN_SYSEX_END_3) {
+                continue;
             }
-            const size_t take = (size_t)(got - i - 1) < 3 ? (size_t)(got - i - 1) : 3;
-            for (size_t k = 0; k < take && n < sizeof(acc); k++) {
-                acc[n++] = s_xfer->data_buffer[i + 1 + k];
+            const bool is_end = cin >= CIN_SYSEX_END_1;
+            const size_t take = is_end ? cin - CIN_SYSEX_START_CONT : 3;
+            const uint8_t *payload = &s_xfer->data_buffer[i + 1];
+            if (is_end && payload[take - 1] != 0xF7) {
+                continue;
             }
-            if (cin == CIN_SYSEX_END) {
-                if (n >= 2 && acc[0] == 0xF0 && acc[n - 1] == 0xF7 && n <= out_cap) {
-                    memcpy(out, acc, n);
-                    *out_len = n;
-                    return 0;
-                }
-                n = 0; /* truncated or badly delimited SysEx: start over */
+            if (payload[0] == 0xF0) {
+                n = 0;
+            }
+            if ((n == 0 && payload[0] != 0xF0) || take > out_cap - n) {
+                n = 0;
+                continue;
+            }
+            memcpy(out + n, payload, take);
+            n += take;
+            if (is_end) {
+                *out_len = n;
+                return 0;
             }
         }
     }
@@ -240,7 +231,7 @@ static int serve(const uint8_t *image, size_t image_len, uint32_t finish, int id
             set_state(DRYDOCK_MIDI_ERROR, "request out of image");
             return 0;
         }
-        uint8_t rsp[FW_UP_MAXDATA + 64];
+        uint8_t rsp[TX_SYSEX_SIZE];
         const size_t rn = fw_up_response(addr, image + addr, dlen, fl, rsp, sizeof(rsp));
         if (rn == 0) {
             return 0;
@@ -270,9 +261,8 @@ static int match_fm1(const usb_device_desc_t *dev, const usb_config_desc_t *cfg)
 }
 
 static esp_err_t attach_fm1(usb_host_client_handle_t client, usb_device_handle_t dev,
-                            const usb_config_desc_t *cfg)
+                            const usb_config_desc_t *cfg, drydock_usb_claim_t *claim)
 {
-    (void)client;
     /* MIDI streaming interface: class Audio (0x01) subclass MIDI (0x03),
      * otherwise any interface with IN/OUT endpoints (the FM-1 exposes
      * MI_00 AudioControl without endpoint; Windows only shows that one). */
@@ -283,20 +273,24 @@ static esp_err_t attach_fm1(usb_host_client_handle_t client, usb_device_handle_t
     if (iface == NULL) {
         return ESP_ERR_NOT_FOUND;
     }
+    const usb_ep_desc_t *ep_out = drydock_usb_find_ep(cfg, iface, true);
+    const usb_ep_desc_t *ep_in = drydock_usb_find_ep(cfg, iface, false);
+    if (!ep_out || !ep_in) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if (s_xfer == NULL) {
+        ESP_RETURN_ON_ERROR(usb_host_transfer_alloc(TX_XFER_SIZE, 0, &s_xfer), TAG,
+                            "transfer_alloc");
+        s_xfer->callback = xfer_cb;
+    }
     ESP_RETURN_ON_ERROR(
         usb_host_interface_claim(client, dev, iface->bInterfaceNumber, iface->bAlternateSetting),
         TAG, "claim iface MIDI");
-    const usb_ep_desc_t *ep_out = drydock_usb_find_ep(iface, 1);
-    const usb_ep_desc_t *ep_in = drydock_usb_find_ep(iface, 0);
-    if (ep_out == NULL || ep_in == NULL) {
-        return ESP_ERR_NOT_SUPPORTED;
-    }
-    s_dev.dev = dev;
-    s_dev.ep_out = ep_out->bEndpointAddress;
-    s_dev.ep_in = ep_in->bEndpointAddress;
+    *claim = (drydock_usb_claim_t){iface->bInterfaceNumber, ep_in->bEndpointAddress,
+                                  ep_out->bEndpointAddress};
     s_attached = 1;
     s_abort = 0;
-    drydock_usb_journal_add("midi attached (uddr)");
+    drydock_usb_journal_add("midi attached");
     return ESP_OK;
 }
 
@@ -304,7 +298,6 @@ static void detach_fm1(void)
 {
     s_attached = 0;
     drydock_usb_journal_add("midi gone");
-    s_dev.dev = NULL;
     s_identity[0] = '\0';
 }
 
@@ -507,16 +500,16 @@ esp_err_t drydock_midi_init(const drydock_midi_callbacks_t *cb)
     }
     if (s_xfer_done == NULL) {
         s_xfer_done = xSemaphoreCreateBinary();
-    }
-    if (s_xfer == NULL) {
-        ESP_RETURN_ON_ERROR(usb_host_transfer_alloc(XFER_BUF_SIZE, 0, &s_xfer), TAG,
-                            "transfer_alloc");
-        s_xfer->callback = xfer_cb;
+        if (s_xfer_done == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
     }
     static int task_started;
     if (!task_started) {
+        if (xTaskCreate(midi_task, "midi_host", 8192, NULL, 4, NULL) != pdPASS) {
+            return ESP_ERR_NO_MEM;
+        }
         task_started = 1;
-        xTaskCreate(midi_task, "midi_host", 8192, NULL, 4, NULL);
     }
     return ESP_OK;
 }
