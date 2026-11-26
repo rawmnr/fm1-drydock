@@ -44,13 +44,6 @@ static const char *TAG = "dry_rescue";
 
 static void set_error(const char *msg);
 
-typedef struct {
-    usb_device_handle_t dev;
-    uint8_t ep_out;
-    uint8_t ep_in;
-} rescue_dev_t;
-
-static rescue_dev_t s_dev;
 static volatile int s_attached;
 static char s_error[96];
 static drydock_rescue_callbacks_t s_cb;
@@ -83,24 +76,22 @@ static esp_err_t bot_submit(const uint8_t *cbw, size_t cbw_len, uint8_t *data, s
         return ESP_ERR_INVALID_STATE;
     }
     /* CBW (31 bytes) on OUT */
-    s_xfer->device_handle = s_dev.dev;
-    s_xfer->bEndpointAddress = s_dev.ep_out;
     s_xfer->num_bytes = (int)cbw_len;
     s_xfer->timeout_ms = 1000;
     memcpy(s_xfer->data_buffer, cbw, cbw_len);
-    ESP_RETURN_ON_ERROR(usb_host_transfer_submit(s_xfer), TAG, "CBW submit");
+    ESP_RETURN_ON_ERROR(drydock_usb_host_submit(drydock_rescue_driver(), s_xfer, true), TAG,
+                        "CBW submit");
     ESP_RETURN_ON_ERROR(xfer_wait(2000), TAG, "CBW xfer");
 
     /* data (if data phase) */
     if (data != NULL && data_len > 0) {
-        s_xfer->device_handle = s_dev.dev;
-        s_xfer->bEndpointAddress = dir_in ? s_dev.ep_in : s_dev.ep_out;
         s_xfer->num_bytes = (int)data_len;
         s_xfer->timeout_ms = (uint32_t)timeout_ms;
         if (!dir_in) {
             memcpy(s_xfer->data_buffer, data, data_len);
         }
-        ESP_RETURN_ON_ERROR(usb_host_transfer_submit(s_xfer), TAG, "data submit");
+        ESP_RETURN_ON_ERROR(drydock_usb_host_submit(drydock_rescue_driver(), s_xfer, !dir_in),
+                            TAG, "data submit");
         ESP_RETURN_ON_ERROR(xfer_wait(timeout_ms + 2000), TAG, "data xfer");
         if (dir_in) {
             memcpy(data, s_xfer->data_buffer, (size_t)s_xfer->actual_num_bytes);
@@ -108,11 +99,10 @@ static esp_err_t bot_submit(const uint8_t *cbw, size_t cbw_len, uint8_t *data, s
     }
 
     /* CSW (13 bytes) on IN */
-    s_xfer->device_handle = s_dev.dev;
-    s_xfer->bEndpointAddress = s_dev.ep_in;
     s_xfer->num_bytes = 13;
     s_xfer->timeout_ms = 2000;
-    ESP_RETURN_ON_ERROR(usb_host_transfer_submit(s_xfer), TAG, "CSW submit");
+    ESP_RETURN_ON_ERROR(drydock_usb_host_submit(drydock_rescue_driver(), s_xfer, false), TAG,
+                        "CSW submit");
     ESP_RETURN_ON_ERROR(xfer_wait(3000), TAG, "CSW xfer");
     if (csw_out != NULL && s_xfer->actual_num_bytes >= 13) {
         memcpy(csw_out, s_xfer->data_buffer, 13);
@@ -323,24 +313,27 @@ static int match_mass_storage(const usb_device_desc_t *dev, const usb_config_des
 }
 
 static esp_err_t attach_msc(usb_host_client_handle_t client, usb_device_handle_t dev,
-                            const usb_config_desc_t *cfg)
+                            const usb_config_desc_t *cfg, drydock_usb_claim_t *claim)
 {
     const usb_intf_desc_t *iface = drydock_usb_find_interface(cfg, MSC_CLASS, MSC_SUBCLASS,
                                                               MSC_PROTO_BOT);
     if (iface == NULL) {
         return ESP_ERR_NOT_FOUND;
     }
+    const usb_ep_desc_t *ep_out = drydock_usb_find_ep(cfg, iface, true);
+    const usb_ep_desc_t *ep_in = drydock_usb_find_ep(cfg, iface, false);
+    if (!ep_out || !ep_in) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if (s_xfer == NULL) {
+        ESP_RETURN_ON_ERROR(usb_host_transfer_alloc(1024, 0, &s_xfer), TAG, "transfer_alloc");
+        s_xfer->callback = xfer_cb;
+    }
     ESP_RETURN_ON_ERROR(
         usb_host_interface_claim(client, dev, iface->bInterfaceNumber, iface->bAlternateSetting),
         TAG, "claim iface MSC");
-    const usb_ep_desc_t *ep_out = drydock_usb_find_ep(iface, 1);
-    const usb_ep_desc_t *ep_in = drydock_usb_find_ep(iface, 0);
-    if (ep_out == NULL || ep_in == NULL) {
-        return ESP_ERR_NOT_SUPPORTED;
-    }
-    s_dev.dev = dev;
-    s_dev.ep_out = ep_out->bEndpointAddress;
-    s_dev.ep_in = ep_in->bEndpointAddress;
+    *claim = (drydock_usb_claim_t){iface->bInterfaceNumber, ep_in->bEndpointAddress,
+                                  ep_out->bEndpointAddress};
     s_attached = 1;
     return ESP_OK;
 }
@@ -348,7 +341,6 @@ static esp_err_t attach_msc(usb_host_client_handle_t client, usb_device_handle_t
 static void detach_msc(void)
 {
     s_attached = 0;
-    s_dev.dev = NULL;
 }
 
 static const drydock_usb_driver_t s_driver = {
@@ -454,10 +446,9 @@ esp_err_t drydock_rescue_init(const drydock_rescue_callbacks_t *cb)
     }
     if (s_xfer_done == NULL) {
         s_xfer_done = xSemaphoreCreateBinary();
-    }
-    if (s_xfer == NULL) {
-        ESP_RETURN_ON_ERROR(usb_host_transfer_alloc(1024, 0, &s_xfer), TAG, "transfer_alloc");
-        s_xfer->callback = xfer_cb;
+        if (s_xfer_done == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
     }
     return ESP_OK;
 }

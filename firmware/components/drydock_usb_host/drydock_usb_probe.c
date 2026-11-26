@@ -114,6 +114,7 @@ esp_err_t drydock_usb_bus_probe(drydock_bus_probe_t *out)
     }
     gpio_pulldown_dis(PIN_DM);
     gpio_pulldown_dis(PIN_DP);
+    usb_serial_jtag_ll_phy_disable_pull_override();
 
     const uint32_t one_pct = N / 100;
     const uint32_t most = N * 95 / 100;

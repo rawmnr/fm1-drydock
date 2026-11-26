@@ -15,6 +15,13 @@ MIDI of the hub page (Chrome/Edge).
 The C port lives in `firmware/components/drydock_proto/upgrade.{c,h}` and the
 USB Host engine in `firmware/components/drydock_usb_midi_host/`.
 
+USB-MIDI events are four bytes. In the header byte, the cable number is
+the high nibble and the CIN is the low nibble. Drydock uses cable 0.
+Per the [USB-MIDI 1.0 specification, Table 4-1](https://www.usb.org/sites/default/files/midi10.pdf),
+CIN `0x4` carries three starting or continuing SysEx bytes. CIN `0x5`,
+`0x6`, and `0x7` end a SysEx with one, two, and three bytes respectively,
+including `F7`. The receiver discards unused bytes in the final event.
+
 ### Handshake (identity)
 
 Send `HS_QUERY` :

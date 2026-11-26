@@ -88,9 +88,12 @@ static void session_log_start(void)
     if (s_session_log != NULL) {
         setvbuf(s_session_log, NULL, _IONBF, 0);
         s_prev_vlog = esp_log_set_vprintf(session_vlog);
-        /* capture the USB host stack's internal diagnostics (HCD, hub):
-         * the normal INFO level produces nothing on a silent port */
-        esp_log_level_set("*", ESP_LOG_VERBOSE);
+        esp_log_level_set("*", ESP_LOG_INFO);
+        esp_log_level_set("dry_usb_host", ESP_LOG_DEBUG);
+        esp_log_level_set("dry_midi", ESP_LOG_DEBUG);
+        esp_log_level_set("dry_probe", ESP_LOG_DEBUG);
+        esp_log_level_set("USBH", ESP_LOG_DEBUG);
+        esp_log_level_set("HUB", ESP_LOG_DEBUG);
         ESP_LOGI(TAG, "session log: /drydock/log/session.txt");
     }
 }
@@ -232,10 +235,9 @@ static void usb_host_start(void)
                  drydock_bus_presence_name(probe.presence),
                  drydock_bus_presence_hint(probe.presence));
     }
-    const drydock_usb_driver_t drivers[] = {
-        *drydock_midi_driver(),
-        *drydock_rescue_driver(),
-    };
+    static const drydock_usb_driver_t *drivers[2];
+    drivers[0] = drydock_midi_driver();
+    drivers[1] = drydock_rescue_driver();
     const esp_err_t ret =
         drydock_usb_host_start(drivers, sizeof(drivers) / sizeof(drivers[0]));
     if (ret != ESP_OK) {
