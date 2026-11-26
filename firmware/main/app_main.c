@@ -7,6 +7,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <stdarg.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "boot_mode.h"
 #include "bsp/esp-bsp.h"
 #include "bsp/display.h"
@@ -24,6 +28,7 @@
 #include "esp_flash.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_log_write.h"
 #include "esp_lvgl_port.h"
 #include "esp_psram.h"
 #include "esp_system.h"
@@ -32,6 +37,60 @@
 #include "lvgl.h"
 
 static const char *TAG = "drydock";
+
+/* ---- session log (fm1-flip parity) ----
+ * The serial console dies as soon as the USB host takes the PHY, so an FM-1
+ * session is blind otherwise. While /drydock is mounted (HOST_FLASH mode), every
+ * ESP_LOG line is mirrored to /drydock/log/session.txt (bounded), including
+ * the USB host stack's own enumeration diagnostics. Read back via PC Sync. */
+static FILE *s_session_log;
+static SemaphoreHandle_t s_session_mtx;
+static int (*s_prev_vlog)(const char *, va_list);
+
+static int session_vlog(const char *fmt, va_list ap)
+{
+    char line[256];
+    const int n = vsnprintf(line, sizeof line, fmt, ap);
+    if (n <= 0) {
+        return 0;
+    }
+    const size_t len = (size_t)n < sizeof line ? (size_t)n : sizeof line - 1;
+    if (s_session_log != NULL && s_session_mtx != NULL) {
+        if (xSemaphoreTake(s_session_mtx, pdMS_TO_TICKS(50)) == pdTRUE) {
+            const long at = ftell(s_session_log);
+            if (at >= 0 && at < 64 * 1024) {
+                fwrite(line, 1, len, s_session_log);
+                /* fflush only drains newlib: the FATFS cluster/directory cache
+                 * must be synced or esp_restart() (PC Sync reboot) loses it all */
+                fsync(fileno(s_session_log));
+            }
+            xSemaphoreGive(s_session_mtx);
+        }
+    }
+    /* still print to the console while it lives (early boot / PC attached) */
+    va_list ap2;
+    va_copy(ap2, ap);
+    s_prev_vlog(fmt, ap2);
+    va_end(ap2);
+    return (int)len;
+}
+
+static void session_log_start(void)
+{
+    mkdir("/drydock/log", 0775); /* -EEXIST ignored when already there */
+    s_session_mtx = xSemaphoreCreateMutex();
+    if (s_session_mtx == NULL) {
+        return;
+    }
+    /* keep only one session per boot; rename the previous one for history */
+    rename("/drydock/log/session.txt", "/drydock/log/session-1.txt");
+    s_session_log = fopen("/drydock/log/session.txt", "wb");
+    if (s_session_log != NULL) {
+        setvbuf(s_session_log, NULL, _IONBF, 0);
+        s_prev_vlog = esp_log_set_vprintf(session_vlog);
+        ESP_LOGI(TAG, "session log: /drydock/log/session.txt");
+    }
+}
 
 /* I2C 0 : tactile (V2: CST816/CST820 0x15 ; V1: FT3168 0x38), expander TCA9554 0x20, PMU AXP2101 0x34 */
 #define I2C_PORT     I2C_NUM_0
@@ -339,6 +398,7 @@ void app_main(void)
     }
 
     probe_sdcard();
+    session_log_start();
     console_start();
 
     /* USB Host engines: MIDI M-UPGRADE (flash) + Rescue UBOOT1.00 (SCSI). */

@@ -30,3 +30,6 @@ CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 # BUFSIZE >= CONFIG_WL_SECTOR_SIZE (4096) : le FIFO MSC doit pouvoir transporter un secteur WL complet.
 CONFIG_TINYUSB_MSC_ENABLED=y
 CONFIG_TINYUSB_MSC_BUFSIZE=4096
+# USB Host : the FM-1 composite (audio+MIDI) config descriptor exceeds 256 bytes;
+# raise the control-transfer buffer so enumeration can complete (fm1-flip fix).
+CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=1024

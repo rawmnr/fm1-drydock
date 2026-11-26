@@ -296,12 +296,14 @@ static esp_err_t attach_fm1(usb_host_client_handle_t client, usb_device_handle_t
     s_dev.ep_in = ep_in->bEndpointAddress;
     s_attached = 1;
     s_abort = 0;
+    drydock_usb_journal_add("midi attached (uddr)");
     return ESP_OK;
 }
 
 static void detach_fm1(void)
 {
     s_attached = 0;
+    drydock_usb_journal_add("midi gone");
     s_dev.dev = NULL;
     s_identity[0] = '\0';
 }

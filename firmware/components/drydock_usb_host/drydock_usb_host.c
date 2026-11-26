@@ -3,6 +3,7 @@
  */
 #include "drydock_usb_host.h"
 
+#include <stdarg.h>
 #include <string.h>
 
 #include "esp_check.h"
@@ -19,6 +20,44 @@ static usb_host_client_handle_t s_client;
 static usb_device_handle_t s_dev;
 static const drydock_usb_driver_t *s_active;
 static TaskHandle_t s_task;
+
+/* ---- journal (visible on the USB Diag screen when the console is dead) ---- */
+
+static char s_journal[DRYDOCK_USB_JOURNAL_LINES][72];
+static int s_journal_len;
+
+void drydock_usb_journal_add(const char *fmt, ...)
+{
+    char line[72];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(line, sizeof line, fmt, ap);
+    va_end(ap);
+    /* client task and probe only: no lock needed around the memmove */
+    memmove(s_journal[0], s_journal[1], (DRYDOCK_USB_JOURNAL_LINES - 1) * sizeof s_journal[0]);
+    snprintf(s_journal[DRYDOCK_USB_JOURNAL_LINES - 1], sizeof s_journal[0], "%s", line);
+    if (s_journal_len < DRYDOCK_USB_JOURNAL_LINES) {
+        s_journal_len++;
+    }
+}
+
+static void jlog(const char *fmt, ...)
+{
+    char line[72];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(line, sizeof line, fmt, ap);
+    va_end(ap);
+    drydock_usb_journal_add("%s", line);
+}
+
+const char *drydock_usb_journal(int *count)
+{
+    if (count != NULL) {
+        *count = s_journal_len;
+    }
+    return &s_journal[0][0];
+}
 
 usb_host_client_handle_t drydock_usb_host_client(void)
 {
@@ -42,6 +81,8 @@ static void on_new_dev(uint8_t addr)
     }
     ESP_LOGI(TAG, "device addr %u: VID=%04X PID=%04X class=0x%02X",
              addr, ddesc->idVendor, ddesc->idProduct, ddesc->bDeviceClass);
+    jlog("dev addr=%u VID=%04X PID=%04X cls=%02X",
+         addr, ddesc->idVendor, ddesc->idProduct, ddesc->bDeviceClass);
 
     for (size_t i = 0; i < s_n_drivers; i++) {
         if (!s_drivers[i].match(ddesc, cfg)) {
@@ -50,14 +91,17 @@ static void on_new_dev(uint8_t addr)
         const esp_err_t ret = s_drivers[i].attach(s_client, dev, cfg);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "attach %s: %s", s_drivers[i].name, esp_err_to_name(ret));
+            jlog("attach %s FAIL %s", s_drivers[i].name, esp_err_to_name(ret));
             continue; /* this driver refused: try the next one */
         }
         s_dev = dev;
         s_active = &s_drivers[i];
         ESP_LOGI(TAG, "active driver: %s", s_drivers[i].name);
+        jlog("attached %s", s_drivers[i].name);
         return;
     }
     ESP_LOGW(TAG, "no driver for addr %u, closing", addr);
+    jlog("NO DRIVER for VID=%04X PID=%04X", ddesc->idVendor, ddesc->idProduct);
     usb_host_device_close(s_client, dev);
 }
 
@@ -65,6 +109,7 @@ static void on_dev_gone(void)
 {
     if (s_active != NULL) {
         ESP_LOGI(TAG, "device gone, detach %s", s_active->name);
+        jlog("gone: detach %s", s_active->name);
         s_active->detach();
         s_active = NULL;
     }
@@ -105,6 +150,7 @@ static void client_task(void *arg)
         vTaskDelete(NULL);
     }
     ESP_LOGI(TAG, "USB Host client ready");
+    jlog("usb host client ready");
     while (1) {
         usb_host_client_handle_events(s_client, portMAX_DELAY);
     }
@@ -119,7 +165,12 @@ esp_err_t drydock_usb_host_start(const drydock_usb_driver_t *drivers, size_t n_d
         .skip_phy_setup = false,
         .intr_flags = ESP_INTR_FLAG_LEVEL1,
     };
-    ESP_RETURN_ON_ERROR(usb_host_install(&host_cfg), TAG, "usb_host_install");
+    const esp_err_t inst = usb_host_install(&host_cfg);
+    if (inst != ESP_OK) {
+        jlog("usb_host_install FAIL %s", esp_err_to_name(inst));
+        return inst;
+    }
+    jlog("usb_host_install ok");
 
     s_drivers = drivers;
     s_n_drivers = n_drivers;

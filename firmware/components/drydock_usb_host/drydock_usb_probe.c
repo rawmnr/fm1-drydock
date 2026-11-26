@@ -7,6 +7,7 @@
 
 #include <stddef.h>
 
+#include "drydock_usb_host.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_rom_gpio.h"
@@ -141,6 +142,12 @@ esp_err_t drydock_usb_bus_probe(drydock_bus_probe_t *out)
         .changes = changes,
     };
     s_last = *out;
+    /* the boot log dies with the console once the host owns the PHY: the
+     * journal keeps the diagnosis readable on the USB Diag screen */
+    drydock_usb_journal_add("probe %s (SE0=%lu J=%lu K=%lu)",
+                            drydock_bus_presence_name(p),
+                            (unsigned long)count[0], (unsigned long)count[1],
+                            (unsigned long)count[2]);
     ESP_LOGI(TAG, "USB bus probe: %s (SE0=%lu J=%lu K=%lu SE1=%lu changes=%lu)",
              drydock_bus_presence_name(p), (unsigned long)count[0],
              (unsigned long)count[1], (unsigned long)count[2],

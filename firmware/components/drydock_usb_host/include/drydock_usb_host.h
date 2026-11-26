@@ -40,6 +40,16 @@ esp_err_t drydock_usb_host_stop(void);
 /** Client handle (to submit transfers from the drivers). */
 usb_host_client_handle_t drydock_usb_host_client(void);
 
+/* In-memory journal of the host lifecycle (enumerations, attach results,
+ * disconnects). Survives FM-1 sessions where the serial console is gone
+ * (the host owns the PHY): read back on the USB Diag screen. */
+#define DRYDOCK_USB_JOURNAL_LINES 8
+/** Returns the journal buffer (n filled lines, oldest first). */
+const char *drydock_usb_journal(int *count);
+
+/** Appends a formatted line to the journal (drivers, probe, engines). */
+void drydock_usb_journal_add(const char *fmt, ...);
+
 /* ---- descriptor helpers ---- */
 
 /** Looks for the first interface of the given class/subclass/protocol
